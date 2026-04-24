@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a1e">
+<title>Team Directory System</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- ════════════════════════════════════════════════════════════════════
+  🔥 FIREBASE SETUP
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ขั้นตอนการติดตั้ง Firebase (ฟรี ทำครั้งเดียว ~10 นาที):
+
+  1. ไปที่ https://console.firebase.google.com
+  2. คลิก "Add project" → ตั้งชื่อ เช่น "team-directory"
+  3. ปิด Google Analytics → "Create project"
+  4. ใน project ให้คลิก </> (Web app) → ตั้งชื่อ → "Register app"
+  5. คัดลอก firebaseConfig ที่ได้ มาแทนที่ด้านล่าง
+  6. ไปที่ Build → Firestore Database → "Create database"
+     → เลือก "Start in test mode" → เลือก location ใกล้สุด (asia-southeast1)
+  7. ไปที่ Build → Storage → "Get started" → "Start in test mode"
+  8. เสร็จ! ทุกอุปกรณ์จะ sync รูปกันแบบ real-time
+
+  ⚠️ แทนที่ค่าด้านล่างด้วย config ของคุณ:
+════════════════════════════════════════════════════════════════════ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+// ══════════ 🔧 แก้ไขค่าเหล่านี้ด้วย Firebase config ของคุณ ══════════
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+// ═══════════════════════════════════════════════════════════════════
+
+const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+
+let db, storage;
+
+if (FIREBASE_CONFIGURED) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    db      = getFirestore(app);
+    storage = getStorage(app);
+    window._fb = { db, storage, doc, setDoc, getDoc, onSnapshot, collection, getDocs, ref, uploadBytes, getDownloadURL };
+    window._fbReady = true;
+    console.log("✅ Firebase connected");
+  } catch(e) {
+    console.error("Firebase init error:", e);
+    window._fbReady = false;
+  }
+} else {
+  window._fbReady = false;
+  console.warn("⚠️ Firebase not configured — running in local mode");
+}
+</script>
+
+<style>
+:root {
+  --bg:#0a0a1e; --bg2:#10102a; --bg3:#16163a;
+  --card:rgba(255,255,255,0.05); --card-border:rgba(255,255,255,0.09);
+  --accent:#4f8aff; --accent2:#7b5fff; --orange:#ff7b35; --green:#2edfa3;
+  --text:#f0f0ff; --text2:rgba(240,240,255,0.55); --text3:rgba(240,240,255,0.3);
+  --r1:#ff4d6d; --r2:#4f8aff; --r3:#2edfa3; --r4:#ffb347;
+  --font:'Noto Sans Thai','Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden}
+.screen{display:none;min-height:100vh}
+.screen.active{display:flex;flex-direction:column}
+
+/* ── LOGIN ── */
+#loginScreen{
+  background:radial-gradient(ellipse at 30% 20%,rgba(79,138,255,0.18) 0%,transparent 60%),
+             radial-gradient(ellipse at 80% 80%,rgba(123,95,255,0.15) 0%,transparent 60%),var(--bg);
+  align-items:center;justify-content:center;padding:24px;
+}
+.login-card{width:100%;max-width:400px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:40px 32px;backdrop-filter:blur(20px);box-shadow:0 24px 80px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08)}
+.login-logo{width:72px;height:72px;border-radius:20px;margin:0 auto 20px;background:linear-gradient(135deg,#4f8aff,#7b5fff);display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 8px 32px rgba(79,138,255,0.4)}
+.login-title{font-size:22px;font-weight:800;text-align:center;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--text2);text-align:center;margin-bottom:32px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase}
+.form-group input{width:100%;padding:12px 16px;border-radius:12px;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.07);color:var(--text);font-size:15px;font-family:var(--font);outline:none;transition:border-color .2s}
+.form-group input:focus{border-color:var(--accent)}
+.btn-login{width:100%;padding:14px;border-radius:14px;border:none;background:linear-gradient(135deg,#4f8aff,#7b5fff);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:var(--font);margin-top:8px;box-shadow:0 4px 20px rgba(79,138,255,0.4);transition:opacity .2s,transform .1s}
+.btn-login:active{transform:scale(0.98);opacity:0.9}
+.login-error{background:rgba(255,77,109,0.15);border:1px solid rgba(255,77,109,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:#ff4d6d;margin-top:12px;display:none}
+.firebase-notice{background:rgba(255,179,71,0.1);border:1px solid rgba(255,179,71,0.25);border-radius:10px;padding:10px 14px;font-size:12px;color:#ffb347;margin-top:12px;display:none;line-height:1.5}
+
+/* ── APP ── */
+#appScreen{background:var(--bg)}
+.topbar{background:rgba(10,10,30,0.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--card-border);padding:14px 20px 12px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-shrink:0}
+.topbar-left{display:flex;flex-direction:column;gap:1px}
+.topbar-title{font-size:17px;font-weight:800;letter-spacing:0.3px}
+.topbar-sub{font-size:11px;color:var(--text2)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.btn-add{background:linear-gradient(135deg,#4f8aff,#7b5fff);border:none;border-radius:20px;color:#fff;font-weight:700;font-size:12px;padding:6px 14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;gap:4px}
+.avatar-sm{width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;overflow:hidden}
+.avatar-sm img{width:100%;height:100%;object-fit:cover}
+
+/* ── CONTENT ── */
+.content{flex:1;overflow-y:auto;padding:16px 16px 80px;-webkit-overflow-scrolling:touch}
+.content::-webkit-scrollbar{display:none}
+
+/* ── SEARCH + FILTER ── */
+.search-wrap{background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:14px;padding:10px 14px;display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.search-wrap svg{opacity:.45;flex-shrink:0}
+.search-wrap input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:14px;font-family:var(--font)}
+.search-wrap input::placeholder{color:var(--text3)}
+.filter-pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
+.filter-pills::-webkit-scrollbar{display:none}
+.pill{padding:5px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;border:1.5px solid rgba(255,255,255,0.12);background:transparent;color:var(--text2);transition:all .2s;font-family:var(--font)}
+.pill.active{background:rgba(79,138,255,0.2);border-color:var(--accent);color:var(--accent)}
+
+/* ── STATS ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.stat-card{background:var(--card);border:1px solid var(--card-border);border-radius:12px;padding:10px 6px;text-align:center}
+.stat-icon{font-size:18px}.stat-val{font-size:20px;font-weight:900;color:var(--accent)}.stat-lbl{font-size:9px;color:var(--text3);margin-top:1px;line-height:1.2}
+
+/* ── MEMBER CARD ── */
+.member-card{background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px;cursor:pointer;transition:background .18s,transform .12s;margin-bottom:9px}
+.member-card:active{transform:scale(0.98);background:rgba(255,255,255,0.09)}
+.avatar-circle{width:52px;height:52px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;border:2.5px solid rgba(255,255,255,0.2);box-shadow:0 4px 14px rgba(0,0,0,0.35);overflow:hidden;position:relative;background-size:cover;background-position:center}
+.avatar-circle img{width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;border-radius:50%}
+.member-info{flex:1;min-width:0}
+.member-name{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.member-en{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.member-pos{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.member-meta{display:flex;align-items:flex-end;flex-direction:column;gap:5px;flex-shrink:0}
+.regional-badge{font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.5px}
+.r1{background:rgba(255,77,109,0.18);color:var(--r1)}.r2{background:rgba(79,138,255,0.18);color:var(--r2)}.r3{background:rgba(46,223,163,0.18);color:var(--r3)}.r4{background:rgba(255,179,71,0.18);color:var(--r4)}
+.rsoa-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(255,123,53,0.2);color:var(--orange)}
+
+/* ── BOTTOM NAV ── */
+.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:600px;background:rgba(8,8,24,0.96);backdrop-filter:blur(20px);border-top:1px solid var(--card-border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0)}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;cursor:pointer;background:none;border:none;color:var(--text3);transition:color .2s;font-family:var(--font)}
+.nav-item.active{color:var(--accent)}
+.nav-item svg{width:22px;height:22px}
+.nav-item span{font-size:10px;font-weight:600}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.72);backdrop-filter:blur(5px);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-sheet{width:100%;max-width:560px;max-height:92vh;overflow-y:auto;background:linear-gradient(180deg,var(--bg3),var(--bg2));border-radius:24px 24px 0 0;border:1px solid var(--card-border);-webkit-overflow-scrolling:touch}
+.modal-sheet::-webkit-scrollbar{display:none}
+.modal-header-band{height:100px;background:linear-gradient(135deg,rgba(79,138,255,0.25),rgba(123,95,255,0.2));border-radius:24px 24px 0 0;position:relative;flex-shrink:0}
+.modal-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.modal-avatar-wrap{display:flex;justify-content:center;margin-top:-44px;margin-bottom:10px}
+.modal-avatar{width:88px;height:88px;border-radius:50%;border:3.5px solid var(--bg2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,0.5);position:relative;cursor:pointer}
+.modal-avatar img{width:100%;height:100%;object-fit:cover;position:absolute}
+.avatar-edit-overlay{position:absolute;bottom:0;left:0;right:0;height:36%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;font-size:14px}
+.modal-name{text-align:center;font-size:20px;font-weight:900;padding:0 24px}
+.modal-en{text-align:center;font-size:13px;color:var(--text2);margin-top:3px}
+.modal-pos{text-align:center;font-size:12px;color:var(--accent);margin-top:6px;font-weight:600;padding:0 20px}
+.modal-badges{display:flex;justify-content:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.info-list{padding:20px 24px;display:flex;flex-direction:column;gap:2px}
+.info-row{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.info-icon{font-size:18px;width:26px;text-align:center;flex-shrink:0;margin-top:2px}
+.info-label{font-size:11px;color:var(--text3);margin-bottom:2px;font-weight:600;letter-spacing:0.3px}
+.info-val{font-size:14px;font-weight:600;color:var(--text)}
+.info-val a{color:var(--accent);text-decoration:none}
+.modal-actions{padding:16px 24px 32px;display:flex;gap:10px}
+.btn-call{flex:1;padding:13px;border-radius:13px;border:none;background:linear-gradient(135deg,#2edfa3,#1bbf87);color:#fff;font-weight:700;font-size:14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-mail{flex:1;padding:13px;border-radius:13px;border:1.5px solid rgba(255,255,255,0.15);background:transparent;color:var(--text);font-weight:700;font-size:14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:6px}
+
+/* ── PHOTO UPLOAD PROGRESS ── */
+.upload-progress{background:rgba(79,138,255,0.15);border:1px solid rgba(79,138,255,0.3);border-radius:12px;padding:12px 16px;margin:0 24px 12px;display:none}
+.upload-bar-wrap{height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:8px;overflow:hidden}
+.upload-bar{height:100%;background:linear-gradient(90deg,#4f8aff,#7b5fff);border-radius:2px;width:0%;transition:width .3s}
+.upload-label{font-size:12px;color:var(--accent);font-weight:600}
+
+/* ── SYNC INDICATOR ── */
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#2edfa3;display:inline-block;margin-right:5px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+.sync-off{background:#ff4d6d;animation:none}
+
+/* ── FORM ── */
+.form-sheet{padding:24px 24px 32px}
+.form-title{font-size:18px;font-weight:800;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;letter-spacing:0.3px}
+.field input,.field select{width:100%;padding:10px 13px;border-radius:11px;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.06);color:var(--text);font-size:14px;font-family:var(--font);outline:none;transition:border-color .2s}
+.field input:focus,.field select:focus{border-color:var(--accent)}
+.field select option{background:#1a1a3e}
+.field.full{grid-column:1/-1}
+.form-btns{display:flex;gap:10px;margin-top:6px}
+.btn-save{flex:2;padding:13px;border-radius:13px;border:none;background:linear-gradient(135deg,#4f8aff,#7b5fff);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:var(--font)}
+.btn-cancel{flex:1;padding:13px;border-radius:13px;border:1.5px solid rgba(255,255,255,0.15);background:transparent;color:var(--text2);font-size:14px;cursor:pointer;font-family:var(--font)}
+.btn-delete{padding:13px 18px;border-radius:13px;border:1.5px solid rgba(255,77,109,0.3);background:rgba(255,77,109,0.1);color:var(--r1);font-size:14px;cursor:pointer;font-family:var(--font)}
+
+/* ── PROFILE ── */
+.profile-wrap{padding:16px}
+.profile-hero{background:linear-gradient(135deg,rgba(79,138,255,0.2),rgba(123,95,255,0.2));border:1px solid var(--card-border);border-radius:20px;padding:28px 20px;text-align:center;margin-bottom:16px}
+.profile-avatar-wrap{position:relative;width:96px;height:96px;margin:0 auto 14px;cursor:pointer}
+.profile-avatar{width:96px;height:96px;border-radius:50%;border:3px solid rgba(255,255,255,0.2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,0.5);position:relative}
+.profile-avatar img{width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0}
+.profile-avatar-edit{position:absolute;bottom:0;right:0;width:28px;height:28px;border-radius:50%;background:var(--accent);border:2.5px solid var(--bg2);display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
+.avatar-sm img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+
+/* ── EMPTY / TOAST / SPINNER ── */
+.empty{text-align:center;padding:48px 20px;color:var(--text3);font-size:14px}
+.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%) translateY(-80px);background:rgba(46,223,163,0.9);color:#fff;font-weight:700;padding:10px 22px;border-radius:24px;font-size:14px;font-family:var(--font);z-index:999;transition:transform .3s;pointer-events:none;backdrop-filter:blur(10px)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ─── LOGIN ─── -->
+<div id="loginScreen" class="screen active">
+  <div class="login-card">
+    <div class="login-logo">📋</div>
+    <div class="login-title">Team Directory</div>
+    <div class="login-sub">Store Operations Audit — cpaxtra.co.th</div>
+    <div id="syncStatus" style="display:none;text-align:center;margin-bottom:16px;font-size:12px;color:var(--text3)">
+      <span id="syncDot" class="sync-dot"></span><span id="syncLabel">เชื่อมต่อ Firebase...</span>
+    </div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="loginUser" placeholder="กรอกชื่อผู้ใช้" autocomplete="username" autocapitalize="none">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="กรอกรหัสผ่าน" autocomplete="current-password">
+    </div>
+    <button class="btn-login" id="btnLogin" onclick="doLogin()">เข้าสู่ระบบ</button>
+    <div id="loginError" class="login-error">⚠️ ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</div>
+    <div id="firebaseNotice" class="firebase-notice">
+      ⚠️ Firebase ยังไม่ได้ตั้งค่า — ทำงานในโหมด local<br>
+      รูปโปรไฟล์จะไม่ sync ระหว่างอุปกรณ์<br>
+      <a href="https://console.firebase.google.com" target="_blank" style="color:#ffb347">คลิกที่นี่เพื่อตั้งค่า Firebase →</a>
+    </div>
+  </div>
+</div>
+
+<!-- ─── APP ─── -->
+<div id="appScreen" class="screen">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-title">📋 Team Directory</div>
+      <div class="topbar-sub" id="topbarSub">
+        <span id="topSyncDot" class="sync-dot sync-off"></span>
+        <span id="topSyncLabel">Local mode</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-add" id="btnAdd" onclick="openAddForm()" style="display:none">＋ เพิ่ม</button>
+      <div class="avatar-sm" id="topAvatar" onclick="switchTab('profile')"></div>
+    </div>
+  </div>
+  <div class="content" id="mainContent"></div>
+  <div class="bottom-nav">
+    <button class="nav-item active" id="nav-members" onclick="switchTab('members')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      <span>สมาชิก</span>
+    </button>
+    <button class="nav-item" id="nav-profile" onclick="switchTab('profile')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span>โปรไฟล์</span>
+    </button>
+  </div>
+</div>
+
+<!-- ─── DETAIL MODAL ─── -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal-sheet">
+    <div class="modal-header-band">
+      <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
+    </div>
+    <div class="modal-avatar-wrap">
+      <div class="modal-avatar" id="detailAvatar" onclick="triggerAvatarUpload()">
+        <div class="avatar-edit-overlay" id="avatarEditOverlay" style="display:none">📷</div>
+      </div>
+    </div>
+    <div class="upload-progress" id="uploadProgress">
+      <div class="upload-label" id="uploadLabel">กำลังอัปโหลดรูป...</div>
+      <div class="upload-bar-wrap"><div class="upload-bar" id="uploadBar"></div></div>
+    </div>
+    <input type="file" id="avatarFileInput" accept="image/*" style="display:none" onchange="handleAvatarUpload(event)">
+    <div class="modal-name" id="detailName"></div>
+    <div class="modal-en" id="detailEn"></div>
+    <div class="modal-pos" id="detailPos"></div>
+    <div class="modal-badges" id="detailBadges"></div>
+    <div class="info-list" id="detailInfo"></div>
+    <div class="modal-actions" id="detailActions"></div>
+  </div>
+</div>
+
+<!-- ─── FORM MODAL ─── -->
+<div class="modal-overlay" id="formModal">
+  <div class="modal-sheet">
+    <div class="form-sheet">
+      <div class="form-title" id="formTitle">➕ เพิ่มสมาชิกใหม่</div>
+      <input type="hidden" id="editId">
+      <div class="form-grid">
+        <div class="field full"><label>ชื่อ-สกุล (ภาษาไทย) *</label><input type="text" id="fThai" placeholder="คุณ ชื่อ นามสกุล"></div>
+        <div class="field full"><label>ชื่อ-สกุล (ภาษาอังกฤษ)</label><input type="text" id="fEng" placeholder="Firstname Lastname"></div>
+        <div class="field"><label>ชื่อเล่น</label><input type="text" id="fNick" placeholder="ชื่อเล่น"></div>
+        <div class="field"><label>Regional</label>
+          <select id="fRegional">
+            <option value="1">Regional 1</option><option value="2">Regional 2</option>
+            <option value="3">Regional 3</option><option value="4">Regional 4</option>
+          </select>
+        </div>
+        <div class="field full"><label>ตำแหน่ง</label><input type="text" id="fPos" placeholder="Store Operations Auditor (Zone1)"></div>
+        <div class="field"><label>เบอร์โทร</label><input type="tel" id="fPhone" placeholder="0xx-xxx-xxxx"></div>
+        <div class="field"><label>E-Mail</label><input type="email" id="fEmail" placeholder="email@cpaxtra.co.th"></div>
+        <div class="field"><label>วัน/เดือน/ปี เกิด (พ.ศ.)</label><input type="text" id="fBirth" placeholder="DD/MM/YYYY"></div>
+        <div class="field"><label>ประเภทรถ</label><input type="text" id="fCarType" placeholder="รถยนต์"></div>
+        <div class="field full"><label>ทะเบียนรถ</label><input type="text" id="fPlate" placeholder="ทะเบียนรถ"></div>
+      </div>
+      <div class="form-btns">
+        <button class="btn-cancel" onclick="closeModal('formModal')">ยกเลิก</button>
+        <button class="btn-delete" id="btnDelete" style="display:none" onclick="deleteMember()">🗑</button>
+        <button class="btn-save" onclick="saveMember()">💾 บันทึก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// ACCOUNTS
+// ═══════════════════════════════════════════════
+const ACCOUNTS = [
+  { username:'soa',   password:'makroho',      role:'user'  },
+  { username:'admin', password:'admin1234567', role:'admin' },
+];
+
+// ═══════════════════════════════════════════════
+// INITIAL MEMBER DATA (from Excel)
+// ═══════════════════════════════════════════════
+const INITIAL_MEMBERS = [
+  {id:'m1',  regional:1,thai:'คุณ วัชระ กลางกระโทก',        eng:'Watchara Klangkratok',            pos:'Regional Store Operations Audit',    nick:'ตุ้ม',   phone:'095-531-7102',email:'RSOA1@cpaxtra.co.th', birth:'14/06/2531',carType:'รถยนต์',plate:'กง 2320 หนองคาย',              isRSOA:true,  avatar:null},
+  {id:'m2',  regional:1,thai:'คุณ พิชิต คันธาเวช',           eng:'Pichit Kuntavech',                pos:'Store Operations Auditor (Zone1)',    nick:'เอ',     phone:'086-544-4280',email:'SOA1@cpaxtra.co.th',  birth:'23/05/2525',carType:'รถยนต์',plate:'กน 4850 เชียงใหม่',             isRSOA:false, avatar:null},
+  {id:'m3',  regional:1,thai:'คุณ ธีรพงษ์ อินจุ้มสาย',      eng:'Teerapong Injumsai',              pos:'Store Operations Auditor (Zone2)',    nick:'หนุ่ย', phone:'085-875-6851',email:'SOA2@cpaxtra.co.th',  birth:'06/01/2534',carType:'รถยนต์',plate:'กบ 3031 กำแพงเพชร',             isRSOA:false, avatar:null},
+  {id:'m4',  regional:1,thai:'คุณ มะลิวัลย์ โขงชัยภูมิ',    eng:'Maliwan Khongchaipome',           pos:'Store Operations Auditor (Zone3)',    nick:'เมย์',  phone:'094-193-1535',email:'SOA2@cpaxtra.co.th',  birth:'18/08/2537',carType:'รถยนต์',plate:'ขง 1963 อุดรธานี',              isRSOA:false, avatar:null},
+  {id:'m5',  regional:1,thai:'คุณ สุมาลี หาญสว่าง',         eng:'Sumali Hansawang',                pos:'Store Operations Auditor (Zone4)',    nick:'พิมพ์', phone:'093-691-5999',email:'SOA4@cpaxtra.co.th',  birth:'24/08/2528',carType:'รถยนต์',plate:'5 กณ 4817 กทม.',                isRSOA:false, avatar:null},
+  {id:'m6',  regional:1,thai:'คุณ ลัดดาวัลย์ ธรรมศร',       eng:'Laddawan Thammasorn',             pos:'Store Operations Auditor (Zone5)',    nick:'ดา',    phone:'096-749-8893',email:'SOA5@cpaxtra.co.th',  birth:'14/06/2527',carType:'รถยนต์',plate:'กม 5466 นครสวรรค์',             isRSOA:false, avatar:null},
+  {id:'m7',  regional:2,thai:'คุณ วสุธรณ์ นิ่มนวลพงษ์',    eng:'Wasuthorn Nimnualpong',           pos:'Regional Store Operations Audit',    nick:'ป๊อก', phone:'084-206-2348',email:'RSOA2@cpaxtra.co.th', birth:'25/06/2520',carType:'รถยนต์',plate:'กต 6918 แพร่',                  isRSOA:true,  avatar:null},
+  {id:'m8',  regional:2,thai:'คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล',eng:'Phakornkarn Maytineepisarnkul', pos:'Store Operations Auditor (Zone6)',    nick:'แอน',   phone:'086-774-4780',email:'SOA6@cpaxtra.co.th',  birth:'14/09/2523',carType:'รถยนต์',plate:'9 กฒ 9877 กทม.',                isRSOA:false, avatar:null},
+  {id:'m9',  regional:2,thai:'คุณ ธนกร วุฒิเดชเกรียงไกร',  eng:'Thanakorn Wutthidetkriengkrai',   pos:'Store Operations Auditor (Zone7)',    nick:'ก๊อต', phone:'090-575-3063',email:'SOA7@cpaxtra.co.th',  birth:'10/11/2536',carType:'รถยนต์',plate:'5 ขน 2006 กรุงเทพมหานคร',      isRSOA:false, avatar:null},
+  {id:'m10', regional:2,thai:'คุณ ศุจิกา พงศากาล',          eng:'Sujika Phongsakan',               pos:'Store Operations Auditor (Zone8)',    nick:'ออย',   phone:'083-512-3860',email:'SOA8@cpaxtra.co.th',  birth:'11/09/2531',carType:'รถยนต์',plate:'2 กฬ 7228 กทม.',                isRSOA:false, avatar:null},
+  {id:'m11', regional:2,thai:'คุณ เอกธัช นาวิกบุตร',        eng:'Ekatash Navikabutra',             pos:'Store Operations Auditor (Zone9)',    nick:'อ๊อก',  phone:'081-616-4612',email:'SOA9@cpaxtra.co.th',  birth:'04/06/2532',carType:'รถยนต์',plate:'2ขธ3805 กทม. / ฌย9677 กทม.',  isRSOA:false, avatar:null},
+  {id:'m12', regional:2,thai:'คุณ อารีย์ นิ่มกลาง',         eng:'Aree Nimklang',                   pos:'Store Operations Auditor (Zone10)',   nick:'แพรวา',phone:'095-504-9786',email:'SOA10@cpaxtra.co.th', birth:'01/04/2530',carType:'รถยนต์',plate:'5กผ8129 กทม.',                  isRSOA:false, avatar:null},
+  {id:'m13', regional:3,thai:'คุณ ณฐกร ศุภรัตนพงศ์',        eng:'Nathakorn Suparattanapong',       pos:'Regional Store Operations Audit',    nick:'หนึ่ง', phone:'081-725-4171',email:'RSOA3@cpaxtra.co.th', birth:'01/07/2517',carType:'รถยนต์',plate:'-',                             isRSOA:true,  avatar:null},
+  {id:'m14', regional:3,thai:'คุณ ณัฐวัฒน์ เดชโนนสังข์',   eng:'Nuttawat Detnonsung',             pos:'Store Operations Auditor (Zone11)',   nick:'ท๊อป', phone:'091-469-3340',email:'SOA11@cpaxtra.co.th', birth:'26/04/2540',carType:'รถยนต์',plate:'กค 6417 ชัยภูมิ',               isRSOA:false, avatar:null},
+  {id:'m15', regional:3,thai:'คุณ พจนีย์ กลั่นเขตกิจ',      eng:'Pojjanee Klunketkij',             pos:'Store Operations Auditor (Zone12)',   nick:'อ้อ',   phone:'091-757-9958',email:'SOA12@cpaxtra.co.th', birth:'04/01/2529',carType:'รถยนต์',plate:'3 ขห7528 กทม',                  isRSOA:false, avatar:null},
+  {id:'m16', regional:3,thai:'คุณ เสถียร ผลขาว',            eng:'Satien Phonkhao',                 pos:'Store Operations Auditor (Zone13)',   nick:'เสถียร',phone:'081-413-0404',email:'SOA13@cpaxtra.co.th', birth:'27/03/2520',carType:'รถยนต์',plate:'4 กด 4409 กทม / ญฬ5486 กทม',   isRSOA:false, avatar:null},
+  {id:'m17', regional:3,thai:'คุณ รัตวัชร์ พงศ์วัจนาทิน',  eng:'Rattanawat Pongwatwatin',         pos:'Store Operations Auditor (Zone14)',   nick:'อาร์ต',phone:'098-321-8419',email:'SOA14@cpaxtra.co.th', birth:'16/07/2526',carType:'รถยนต์',plate:'2 กม 5701 กทม',                 isRSOA:false, avatar:null},
+  {id:'m18', regional:3,thai:'คุณ วรรณิภา บุญจริง',         eng:'Wannipa Boonching',               pos:'Store Operations Auditor (Zone15)',   nick:'ติ๊ก',  phone:'086-337-4671',email:'SOA15@cpaxtra.co.th', birth:'23/09/2518',carType:'รถยนต์',plate:'1 กถ 766 กทม',                  isRSOA:false, avatar:null},
+  {id:'m19', regional:4,thai:'คุณ บุษรา ไชยเสน',            eng:'Butsara Chaiyasen',               pos:'Store Operations Auditor (Zone16)',   nick:'บุ๋ม',  phone:'082-810-3880',email:'SOA16@cpaxtra.co.th', birth:'28/03/2529',carType:'รถยนต์',plate:'ขฉ 8528 สุราษฎร์ธานี',        isRSOA:false, avatar:null},
+  {id:'m20', regional:4,thai:'คุณ พงศิกร รังษีพลาสวัสดิ์',  eng:'Pongsikorn Rangsripalasawat',    pos:'Store Operations Auditor (Zone17)',   nick:'ปอนด์',phone:'099-129-9090',email:'SOA17@cpaxtra.co.th', birth:'23/08/2533',carType:'รถยนต์',plate:'กธ 2773 ภูเก็ต',               isRSOA:false, avatar:null},
+];
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let currentUser = null;
+let currentUserAvatar = null; // URL of logged-in user's profile photo
+let userAvatarListener = null;
+let members = JSON.parse(localStorage.getItem('tds_members') || 'null') || INITIAL_MEMBERS;
+let currentTab = 'members';
+let filterRegional = 'all';
+let searchQ = '';
+let editingId = null;
+let currentDetailId = null;
+let fbListeners = [];
+
+// ═══════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════
+const COLORS=['#ff4d6d','#4f8aff','#2edfa3','#ffb347','#a855f7','#06b6d4','#f97316','#84cc16'];
+const RCLASS=['','r1','r2','r3','r4'];
+const RNAME=['','Regional 1','Regional 2','Regional 3','Regional 4'];
+
+function getColor(id) {
+  const n = parseInt(String(id).replace(/\D/g,'')) || 0;
+  return COLORS[n % COLORS.length];
+}
+function getInitials(thai) {
+  const parts = (thai||'').replace('คุณ ','').trim().split(' ');
+  return ((parts[0]||'').charAt(0) + (parts[1]||'').charAt(0)).toUpperCase() || '?';
+}
+function saveLocal() { localStorage.setItem('tds_members', JSON.stringify(members)); }
+function getAge(birth) {
+  if(!birth||birth==='-') return '';
+  const p=birth.split('/'); if(p.length!==3) return '';
+  const age=Math.floor((Date.now()-new Date(+p[2]-543,+p[1]-1,+p[0]))/(365.25*24*3600*1000));
+  return isNaN(age)?'':`(อายุ ${age} ปี)`;
+}
+
+// ═══════════════════════════════════════════════
+// FIREBASE SYNC
+// ═══════════════════════════════════════════════
+function isFbReady() { return window._fbReady === true; }
+
+// Push all initial members to Firestore if not yet seeded
+async function seedFirestore() {
+  if (!isFbReady()) return;
+  const {db, collection, getDocs, doc, setDoc} = window._fb;
+  const snap = await getDocs(collection(db,'members'));
+  if (!snap.empty) return; // already seeded
+  for (const m of INITIAL_MEMBERS) {
+    await setDoc(doc(db,'members',m.id), m);
+  }
+  console.log('✅ Seeded Firestore with', INITIAL_MEMBERS.length, 'members');
+}
+
+// Real-time listener — updates local array and re-renders
+function startFirebaseListener() {
+  if (!isFbReady()) return;
+  const {db, collection, onSnapshot} = window._fb;
+  const unsub = onSnapshot(collection(db,'members'), snap => {
+    const updated = [];
+    snap.forEach(d => updated.push(d.data()));
+    if (updated.length > 0) {
+      updated.sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+      members = updated;
+      saveLocal();
+      if (currentTab==='members') renderMembers();
+      // update detail modal if open
+      if (currentDetailId) {
+        const m = members.find(x=>x.id===currentDetailId);
+        if (m) updateDetailAvatar(m);
+      }
+    }
+  }, err => {
+    console.error('Firestore listener error:', err);
+    setTopSync(false, 'Firebase error');
+  });
+  fbListeners.push(unsub);
+  setTopSync(true, 'Sync แบบ Real-time');
+}
+
+function stopFirebaseListeners() { fbListeners.forEach(u=>u()); fbListeners=[]; if(userAvatarListener){userAvatarListener();userAvatarListener=null;} }
+
+// ═══════════════════════════════════════════════
+// USER PROFILE PHOTO (users collection)
+// ═══════════════════════════════════════════════
+function startUserAvatarListener() {
+  if (!isFbReady() || !currentUser) return;
+  const {db, doc, onSnapshot} = window._fb;
+  const unsub = onSnapshot(doc(db, 'users', currentUser.username), snap => {
+    const data = snap.exists() ? snap.data() : {};
+    currentUserAvatar = data.avatar || null;
+    renderTopAvatar();
+    // re-render profile tab if open
+    if (currentTab === 'profile') renderProfile();
+  }, err => console.error('User avatar listener error:', err));
+  userAvatarListener = unsub;
+}
+
+async function saveUserAvatar(url) {
+  if (!isFbReady() || !currentUser) return;
+  const {db, doc, setDoc} = window._fb;
+  await setDoc(doc(db, 'users', currentUser.username), { avatar: url, updatedAt: Date.now() }, { merge: true });
+}
+
+async function handleProfileAvatarUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const compressed = await compressImage(file, 800, 0.78);
+
+  const progWrap = document.getElementById('profileUploadProgress');
+  const progBar  = document.getElementById('profileUploadBar');
+  const progLbl  = document.getElementById('profileUploadLabel');
+  if (progWrap) { progWrap.style.display='block'; progBar.style.width='0%'; progLbl.textContent='กำลังบีบอัดรูป...'; }
+
+  if (isFbReady()) {
+    try {
+      if(progLbl) progLbl.textContent='กำลังอัปโหลดไปยัง Cloud...';
+      if(progBar) progBar.style.width='30%';
+      const {storage, ref, uploadBytes, getDownloadURL} = window._fb;
+      const storageRef = ref(storage, `user_avatars/${currentUser.username}_${Date.now()}.jpg`);
+      const blob = await fetch(compressed).then(r=>r.blob());
+      if(progBar) progBar.style.width='60%';
+      await uploadBytes(storageRef, blob);
+      if(progBar) progBar.style.width='85%';
+      const url = await getDownloadURL(storageRef);
+      if(progBar) progBar.style.width='95%';
+      await saveUserAvatar(url);
+      if(progBar) progBar.style.width='100%';
+      if(progLbl) progLbl.textContent='✅ sync เรียบร้อย';
+      setTimeout(()=>{ if(progWrap) progWrap.style.display='none'; }, 1800);
+      showToast('✅ เปลี่ยนรูปโปรไฟล์เรียบร้อย — sync ทุกอุปกรณ์แล้ว');
+    } catch(e) {
+      console.error(e);
+      if(progWrap) progWrap.style.display='none';
+      showToast('❌ อัปโหลดล้มเหลว: '+e.message, true);
+    }
+  } else {
+    // Local fallback
+    currentUserAvatar = compressed;
+    localStorage.setItem('tds_user_avatar_' + currentUser.username, compressed);
+    renderTopAvatar();
+    if(progWrap) progWrap.style.display='none';
+    if(currentTab==='profile') renderProfile();
+    showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
+  }
+}
+
+async function writeToFirestore(memberId, data) {
+  if (!isFbReady()) return;
+  const {db, doc, setDoc} = window._fb;
+  await setDoc(doc(db,'members',memberId), data, {merge:true});
+}
+
+async function deleteFromFirestore(memberId) {
+  if (!isFbReady()) return;
+  const {db, doc} = window._fb;
+  const {deleteDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+  await deleteDoc(doc(db,'members',memberId));
+}
+
+function setTopSync(ok, label) {
+  const dot = document.getElementById('topSyncDot');
+  const lbl = document.getElementById('topSyncLabel');
+  if(dot) { dot.classList.toggle('sync-off', !ok); }
+  if(lbl) lbl.textContent = label || (ok ? 'Sync แบบ Real-time' : 'Local mode');
+}
+
+// ═══════════════════════════════════════════════
+// LOGIN
+// ═══════════════════════════════════════════════
+function doLogin() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const acc = ACCOUNTS.find(a=>a.username===u && a.password===p);
+  if (!acc) { document.getElementById('loginError').style.display='block'; return; }
+  currentUser = acc;
+  document.getElementById('loginScreen').classList.remove('active');
+  document.getElementById('appScreen').classList.add('active');
+  if (acc.role==='admin') document.getElementById('btnAdd').style.display='flex';
+  // Load local fallback avatar first
+  currentUserAvatar = localStorage.getItem('tds_user_avatar_' + acc.username) || null;
+  renderTopAvatar();
+  if (isFbReady()) {
+    seedFirestore().then(()=>startFirebaseListener());
+    startUserAvatarListener();
+    setTopSync(true,'Sync แบบ Real-time');
+  } else {
+    setTopSync(false,'Local mode');
+  }
+  switchTab('members');
+}
+
+document.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && document.getElementById('loginScreen').classList.contains('active')) doLogin();
+});
+
+// ═══════════════════════════════════════════════
+// LOGIN SCREEN INIT — show firebase status
+// ═══════════════════════════════════════════════
+window.addEventListener('load', ()=>{
+  const notice = document.getElementById('firebaseNotice');
+  const syncStatus = document.getElementById('syncStatus');
+  if (!isFbReady()) {
+    if (notice) notice.style.display='block';
+  } else {
+    if (syncStatus) {
+      syncStatus.style.display='block';
+      document.getElementById('syncLabel').textContent='Firebase พร้อมใช้งาน ✓';
+      document.getElementById('syncDot').classList.remove('sync-off');
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════
+// TOP AVATAR
+// ═══════════════════════════════════════════════
+function renderTopAvatar() {
+  const el = document.getElementById('topAvatar');
+  const bgColor = currentUser.role==='admin'
+    ? 'linear-gradient(135deg,#ff4d6d,#ff7b35)'
+    : 'linear-gradient(135deg,#4f8aff,#7b5fff)';
+  el.style.background = bgColor;
+  if (currentUserAvatar) {
+    el.innerHTML = `<img src="${currentUserAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    el.innerHTML = '';
+    el.textContent = currentUser.username.slice(0,2).toUpperCase();
+  }
+}
+
+// ═══════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════
+function switchTab(tab) {
+  currentTab=tab;
+  ['members','profile'].forEach(t=>{
+    document.getElementById('nav-'+t)?.classList.toggle('active',t===tab);
+  });
+  if(tab==='members') renderMembers();
+  else renderProfile();
+}
+
+// ═══════════════════════════════════════════════
+// MEMBERS LIST
+// ═══════════════════════════════════════════════
+function renderMembers() {
+  const el = document.getElementById('mainContent');
+  const filtered = members.filter(m=>{
+    const matchR = filterRegional==='all' || m.regional===+filterRegional;
+    const q = searchQ.toLowerCase();
+    const matchQ = !q || [m.thai,m.eng,m.nick,m.phone,m.email,m.plate,m.pos].join(' ').toLowerCase().includes(q);
+    return matchR && matchQ;
+  });
+  const counts=[1,2,3,4].map(r=>members.filter(m=>m.regional===r).length);
+
+  el.innerHTML=`
+    <div class="search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" placeholder="ค้นหาชื่อ, เบอร์, อีเมล, โซน, ทะเบียน..." value="${searchQ}"
+        oninput="searchQ=this.value;renderMembers()" autocomplete="off">
+    </div>
+    <div class="filter-pills">
+      <button class="pill ${filterRegional==='all'?'active':''}" onclick="filterRegional='all';renderMembers()">ทั้งหมด (${members.length})</button>
+      <button class="pill ${filterRegional==='1'?'active':''}" onclick="filterRegional='1';renderMembers()">Regional 1 (${counts[0]})</button>
+      <button class="pill ${filterRegional==='2'?'active':''}" onclick="filterRegional='2';renderMembers()">Regional 2 (${counts[1]})</button>
+      <button class="pill ${filterRegional==='3'?'active':''}" onclick="filterRegional='3';renderMembers()">Regional 3 (${counts[2]})</button>
+      <button class="pill ${filterRegional==='4'?'active':''}" onclick="filterRegional='4';renderMembers()">Regional 4 (${counts[3]})</button>
+    </div>
+    ${currentUser.role==='admin'?`
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-val">${members.length}</div><div class="stat-lbl">สมาชิก<br>ทั้งหมด</div></div>
+      <div class="stat-card"><div class="stat-icon">🏅</div><div class="stat-val">${members.filter(m=>m.isRSOA).length}</div><div class="stat-lbl">Regional<br>Lead</div></div>
+      <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-val">4</div><div class="stat-lbl">Regionals</div></div>
+      <div class="stat-card"><div class="stat-icon">🔍</div><div class="stat-val">${filtered.length}</div><div class="stat-lbl">ผลการ<br>ค้นหา</div></div>
+    </div>`:''}
+    <div id="memberList"></div>`;
+
+  const list = document.getElementById('memberList');
+  if(filtered.length===0){list.innerHTML='<div class="empty">🔍 ไม่พบข้อมูลที่ค้นหา</div>';return;}
+  filtered.forEach(m=>{
+    const card=document.createElement('div');
+    card.className='member-card';
+    card.onclick=()=>openDetail(m.id);
+    const av = m.avatar
+      ? `<div class="avatar-circle" style="background:${getColor(m.id)}"><img src="${m.avatar}" loading="lazy"></div>`
+      : `<div class="avatar-circle" style="background:${getColor(m.id)}">${getInitials(m.thai)}</div>`;
+    card.innerHTML=`${av}
+      <div class="member-info">
+        <div class="member-name">${m.thai} <span style="color:var(--text3);font-weight:500;font-size:12px">(${m.nick})</span></div>
+        <div class="member-en">${m.eng}</div>
+        <div class="member-pos">${m.pos}</div>
+      </div>
+      <div class="member-meta">
+        <span class="regional-badge ${RCLASS[m.regional]}">R${m.regional}</span>
+        ${m.isRSOA?'<span class="rsoa-tag">RSOA</span>':''}
+      </div>`;
+    list.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════════════
+// DETAIL MODAL
+// ═══════════════════════════════════════════════
+function openDetail(id) {
+  const m = members.find(x=>x.id===id); if(!m) return;
+  currentDetailId = id;
+  const canEdit = currentUser.role==='admin' || true; // everyone can upload their own photo
+  updateDetailAvatar(m);
+  document.getElementById('avatarEditOverlay').style.display = 'flex';
+  document.getElementById('detailName').textContent = m.thai;
+  document.getElementById('detailEn').textContent = m.eng;
+  document.getElementById('detailPos').textContent = m.pos;
+  document.getElementById('detailBadges').innerHTML=`
+    <span class="regional-badge ${RCLASS[m.regional]}">${RNAME[m.regional]}</span>
+    ${m.isRSOA?'<span class="rsoa-tag">RSOA</span>':''}`;
+  document.getElementById('detailInfo').innerHTML=`
+    <div class="info-row"><div class="info-icon">👤</div><div><div class="info-label">ชื่อเล่น</div><div class="info-val">${m.nick||'-'}</div></div></div>
+    <div class="info-row"><div class="info-icon">📱</div><div><div class="info-label">เบอร์โทรศัพท์</div><div class="info-val"><a href="tel:${(m.phone||'').replace(/-/g,'')} ">${m.phone}</a></div></div></div>
+    <div class="info-row"><div class="info-icon">✉️</div><div><div class="info-label">อีเมล</div><div class="info-val"><a href="mailto:${m.email}">${m.email}</a></div></div></div>
+    <div class="info-row"><div class="info-icon">🎂</div><div><div class="info-label">วัน/เดือน/ปีเกิด (พ.ศ.)</div><div class="info-val">${m.birth||'-'} ${getAge(m.birth)}</div></div></div>
+    <div class="info-row"><div class="info-icon">🚗</div><div><div class="info-label">ประเภทรถ</div><div class="info-val">${m.carType||'-'}</div></div></div>
+    <div class="info-row"><div class="info-icon">🔢</div><div><div class="info-label">ทะเบียนรถ</div><div class="info-val">${m.plate||'-'}</div></div></div>
+    <div class="info-row" style="border:none"><div class="info-icon">📷</div><div><div class="info-label">รูปโปรไฟล์</div><div class="info-val" style="font-size:12px;color:var(--text2)">แตะวงกลมรูปด้านบนเพื่อเปลี่ยนรูป${isFbReady()?' — sync ทุกอุปกรณ์ทันที':' (local only)'}</div></div></div>
+  `;
+  document.getElementById('detailActions').innerHTML=`
+    <button class="btn-call" onclick="window.location='tel:${(m.phone||'').replace(/-/g,'')}'">📞 โทร</button>
+    <button class="btn-mail" onclick="window.location='mailto:${m.email}'">✉️ อีเมล</button>
+    ${currentUser.role==='admin'?`<button class="btn-mail" onclick="closeModal('detailModal');openEditForm('${m.id}')" style="background:rgba(79,138,255,0.15);border-color:var(--accent);color:var(--accent)">✏️ แก้ไข</button>`:''}
+  `;
+  document.getElementById('detailModal').classList.add('show');
+}
+
+function updateDetailAvatar(m) {
+  const av = document.getElementById('detailAvatar');
+  if(!av) return;
+  av.style.background = getColor(m.id);
+  // remove old image if any
+  const oldImg = av.querySelector('img');
+  if(oldImg) oldImg.remove();
+  if(m.avatar) {
+    const img=document.createElement('img');
+    img.src=m.avatar; img.style.cssText='position:absolute;width:100%;height:100%;object-fit:cover;border-radius:50%';
+    av.insertBefore(img, av.firstChild);
+  } else {
+    const txt = av.querySelector('.av-initials');
+    if(!txt) {
+      const span=document.createElement('span');
+      span.className='av-initials'; span.textContent=getInitials(m.thai);
+      av.insertBefore(span, av.firstChild);
+    }
+  }
+  if(!m.avatar) {
+    const old=av.querySelector('.av-initials');
+    if(!old){const s=document.createElement('span');s.className='av-initials';s.textContent=getInitials(m.thai);av.insertBefore(s,av.firstChild);}
+  } else {
+    const old=av.querySelector('.av-initials'); if(old) old.remove();
+  }
+}
+
+// ═══════════════════════════════════════════════
+// PHOTO UPLOAD
+// ═══════════════════════════════════════════════
+function triggerAvatarUpload() {
+  document.getElementById('avatarFileInput').click();
+}
+
+async function handleAvatarUpload(event) {
+  const file = event.target.files[0];
+  if(!file||!currentDetailId) return;
+  event.target.value=''; // reset
+
+  const m = members.find(x=>x.id===currentDetailId);
+  if(!m) return;
+
+  // compress image to max 800px & ~150KB
+  const compressed = await compressImage(file, 800, 0.75);
+
+  const progress = document.getElementById('uploadProgress');
+  const bar = document.getElementById('uploadBar');
+  const label = document.getElementById('uploadLabel');
+  progress.style.display='block';
+  bar.style.width='0%';
+  label.textContent='กำลังบีบอัดรูป...';
+
+  if(isFbReady()) {
+    // Upload to Firebase Storage
+    try {
+      label.textContent='กำลังอัปโหลดไปยัง Cloud...';
+      bar.style.width='30%';
+      const {storage, ref, uploadBytes, getDownloadURL} = window._fb;
+      const storageRef = ref(storage, `avatars/${currentDetailId}_${Date.now()}.jpg`);
+      const blob = await fetch(compressed).then(r=>r.blob());
+      bar.style.width='60%';
+      await uploadBytes(storageRef, blob);
+      bar.style.width='85%';
+      const url = await getDownloadURL(storageRef);
+      bar.style.width='95%';
+      // Save URL to Firestore — listener will update all devices
+      await writeToFirestore(currentDetailId, { avatar: url });
+      bar.style.width='100%';
+      label.textContent='✅ อัปโหลดสำเร็จ — กำลัง sync...';
+      setTimeout(()=>{ progress.style.display='none'; }, 2000);
+      showToast('✅ เปลี่ยนรูปโปรไฟล์เรียบร้อย — sync ทุกอุปกรณ์แล้ว');
+    } catch(e) {
+      console.error(e);
+      progress.style.display='none';
+      showToast('❌ อัปโหลดล้มเหลว: '+e.message);
+    }
+  } else {
+    // Local fallback — store base64
+    label.textContent='บันทึกในเครื่อง...';
+    bar.style.width='80%';
+    members = members.map(x=>x.id===currentDetailId ? {...x,avatar:compressed} : x);
+    saveLocal();
+    bar.style.width='100%';
+    updateDetailAvatar(members.find(x=>x.id===currentDetailId));
+    if(currentTab==='members') renderMembers();
+    setTimeout(()=>{ progress.style.display='none'; }, 1200);
+    showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
+  }
+}
+
+function compressImage(file, maxDim, quality) {
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width, h=img.height;
+        if(w>maxDim||h>maxDim){
+          if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}
+          else{w=Math.round(w*maxDim/h);h=maxDim;}
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg',quality));
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ═══════════════════════════════════════════════
+// ADD / EDIT FORM
+// ═══════════════════════════════════════════════
+function openAddForm() {
+  editingId=null;
+  document.getElementById('formTitle').textContent='➕ เพิ่มสมาชิกใหม่';
+  document.getElementById('btnDelete').style.display='none';
+  ['fThai','fEng','fNick','fPhone','fEmail','fBirth','fCarType','fPlate','fPos'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fRegional').value='1';
+  document.getElementById('fCarType').value='รถยนต์';
+  document.getElementById('formModal').classList.add('show');
+}
+
+function openEditForm(id) {
+  const m=members.find(x=>x.id===id); if(!m) return;
+  editingId=id;
+  document.getElementById('formTitle').textContent='✏️ แก้ไขข้อมูลสมาชิก';
+  document.getElementById('btnDelete').style.display='block';
+  document.getElementById('fThai').value=m.thai||'';
+  document.getElementById('fEng').value=m.eng||'';
+  document.getElementById('fNick').value=m.nick||'';
+  document.getElementById('fRegional').value=m.regional||1;
+  document.getElementById('fPos').value=m.pos||'';
+  document.getElementById('fPhone').value=m.phone||'';
+  document.getElementById('fEmail').value=m.email||'';
+  document.getElementById('fBirth').value=m.birth||'';
+  document.getElementById('fCarType').value=m.carType||'';
+  document.getElementById('fPlate').value=m.plate||'';
+  document.getElementById('formModal').classList.add('show');
+}
+
+async function saveMember() {
+  const thai=document.getElementById('fThai').value.trim();
+  if(!thai){showToast('⚠️ กรุณากรอกชื่อ-สกุล');return;}
+  const data={
+    thai, eng:document.getElementById('fEng').value.trim(),
+    nick:document.getElementById('fNick').value.trim(),
+    regional:+document.getElementById('fRegional').value,
+    pos:document.getElementById('fPos').value.trim(),
+    phone:document.getElementById('fPhone').value.trim(),
+    email:document.getElementById('fEmail').value.trim(),
+    birth:document.getElementById('fBirth').value.trim(),
+    carType:document.getElementById('fCarType').value.trim(),
+    plate:document.getElementById('fPlate').value.trim(),
+    isRSOA:document.getElementById('fPos').value.includes('Regional Store'),
+  };
+  if(editingId) {
+    const existing=members.find(m=>m.id===editingId);
+    const updated={...existing,...data};
+    members=members.map(m=>m.id===editingId?updated:m);
+    saveLocal();
+    if(isFbReady()) await writeToFirestore(editingId, data);
+    showToast('✅ แก้ไขข้อมูลเรียบร้อย'+(isFbReady()?' — sync แล้ว':''));
+  } else {
+    const newId='m'+Date.now();
+    const newM={...data, id:newId, avatar:null};
+    members.push(newM);
+    saveLocal();
+    if(isFbReady()) await writeToFirestore(newId, newM);
+    showToast('✅ เพิ่มสมาชิกใหม่เรียบร้อย'+(isFbReady()?' — sync แล้ว':''));
+  }
+  closeModal('formModal');
+  renderMembers();
+}
+
+async function deleteMember() {
+  if(!confirm('ยืนยันการลบสมาชิกนี้?')) return;
+  members=members.filter(m=>m.id!==editingId);
+  saveLocal();
+  if(isFbReady()) await deleteFromFirestore(editingId);
+  closeModal('formModal');
+  showToast('🗑️ ลบสมาชิกเรียบร้อย');
+  renderMembers();
+}
+
+// ═══════════════════════════════════════════════
+// PROFILE TAB
+// ═══════════════════════════════════════════════
+function renderProfile() {
+  const el=document.getElementById('mainContent');
+  const role=currentUser.role;
+  const bgGrad = role==='admin'
+    ? 'linear-gradient(135deg,#ff4d6d,#ff7b35)'
+    : 'linear-gradient(135deg,#4f8aff,#7b5fff)';
+  const avatarHTML = currentUserAvatar
+    ? `<img src="${currentUserAvatar}" style="width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;border-radius:50%">`
+    : `<span style="position:relative;z-index:1">${currentUser.username.slice(0,2).toUpperCase()}</span>`;
+
+  el.innerHTML=`
+    <div class="profile-wrap">
+      <div class="profile-hero">
+        <div class="profile-avatar-wrap" onclick="document.getElementById('profileFileInput').click()" title="เปลี่ยนรูปโปรไฟล์">
+          <div class="profile-avatar" style="background:${bgGrad}">
+            ${avatarHTML}
+          </div>
+          <div class="profile-avatar-edit">📷</div>
+        </div>
+        <input type="file" id="profileFileInput" accept="image/*" style="display:none" onchange="handleProfileAvatarUpload(event)">
+
+        <div id="profileUploadProgress" style="display:none;margin:10px auto 0;max-width:260px;background:rgba(79,138,255,0.15);border:1px solid rgba(79,138,255,0.3);border-radius:12px;padding:10px 14px">
+          <div id="profileUploadLabel" style="font-size:12px;color:var(--accent);font-weight:600"></div>
+          <div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:8px;overflow:hidden">
+            <div id="profileUploadBar" style="height:100%;background:linear-gradient(90deg,#4f8aff,#7b5fff);border-radius:2px;width:0%;transition:width .3s"></div>
+          </div>
+        </div>
+
+        <div style="font-size:20px;font-weight:900;margin-top:4px">${currentUser.username.toUpperCase()}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">แตะรูปเพื่อเปลี่ยนโปรไฟล์</div>
+        <div style="margin-top:10px">
+          <span style="background:${role==='admin'?'rgba(255,123,53,0.2)':'rgba(79,138,255,0.2)'};color:${role==='admin'?'#ff7b35':'#4f8aff'};padding:3px 14px;border-radius:20px;font-size:12px;font-weight:700">
+            ${role==='admin'?'👑 ADMIN':'👤 USER'}
+          </span>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px 16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:8px">🔥 สถานะ Firebase</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+          <span class="sync-dot ${isFbReady()?'':'sync-off'}"></span>
+          <span style="color:${isFbReady()?'#2edfa3':'#ff4d6d'}">${isFbReady()?'เชื่อมต่อแล้ว — รูปโปรไฟล์ sync ทุกอุปกรณ์':'ยังไม่ได้ตั้งค่า Firebase — เปิดไฟล์ HTML เพื่อตั้งค่า'}</span>
+        </div>
+      </div>
+
+      ${role==='admin'?`
+      <div style="background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:16px 20px;margin-bottom:12px">
+        <div style="font-size:13px;color:var(--text2);font-weight:600;margin-bottom:12px">📊 สรุปข้อมูลระบบ</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:12px">
+            <div style="font-size:28px;font-weight:900;color:var(--accent)">${members.length}</div>
+            <div style="font-size:11px;color:var(--text3)">สมาชิกทั้งหมด</div>
+          </div>
+          <div style="text-align:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:12px">
+            <div style="font-size:28px;font-weight:900;color:var(--orange)">${members.filter(m=>m.isRSOA).length}</div>
+            <div style="font-size:11px;color:var(--text3)">Regional Lead</div>
+          </div>
+        </div>
+      </div>`:''}
+
+      <button onclick="doLogout()" style="width:100%;padding:13px;border-radius:14px;border:1.5px solid rgba(255,77,109,0.3);background:rgba(255,77,109,0.08);color:#ff4d6d;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font);margin-top:4px">
+        🚪 ออกจากระบบ
+      </button>
+    </div>`;
+}
+
+function doLogout() {
+  stopFirebaseListeners();
+  currentUser=null;
+  currentUserAvatar=null;
+  document.getElementById('appScreen').classList.remove('active');
+  document.getElementById('loginScreen').classList.add('active');
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+  document.getElementById('loginError').style.display='none';
+  document.getElementById('btnAdd').style.display='none';
+}
+
+// ═══════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════
+function closeModal(id) { document.getElementById(id).classList.remove('show'); if(id==='detailModal') currentDetailId=null; }
+function showToast(msg,err=false) {
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.background=err?'rgba(255,77,109,0.9)':'rgba(46,223,163,0.9)';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+document.querySelectorAll('.modal-overlay').forEach(o=>{
+  o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('show'); });
+});
+</script>
+</body>
+</html>

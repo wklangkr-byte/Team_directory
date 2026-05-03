@@ -10,13 +10,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
 <!-- ════════════════════════════════════════════════════════════════════
-  🔥 FIREBASE — Realtime Database + Storage
+  🔥 FIREBASE — Realtime Database (รูปโปรไฟล์เก็บเป็น base64 ใน DB)
   ✅ Config ตั้งค่าเรียบร้อยแล้ว พร้อม Sync ทุกอุปกรณ์
   ════════════════════════════════════════════════════════════════════ -->
 <script type="module">
-import { initializeApp }                                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, remove, child }  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { initializeApp }                                       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, remove }         from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ✅ Firebase Config — team-directory-soa
 const firebaseConfig = {
@@ -31,34 +30,29 @@ const firebaseConfig = {
 };
 
 try {
-  const app     = initializeApp(firebaseConfig);
-  const db      = getDatabase(app);
-  const storage = getStorage(app);
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
 
-  // ── helper: แปลง path-safe key (แทน . ด้วย _dot_)
+  // helper: แทน . ใน key ด้วย _dot_
   const safeKey = k => k.replace(/\./g, '_dot_');
 
   window._fb = {
-    db, storage,
+    db,
 
-    // อ่าน members ทั้งหมดครั้งเดียว
     async getMembers() {
       const snap = await get(ref(db, 'members'));
       if (!snap.exists()) return [];
       return Object.values(snap.val());
     },
 
-    // เขียน / อัปเดต member
     async setMember(id, data) {
       await set(ref(db, 'members/' + id), data);
     },
 
-    // ลบ member
     async deleteMember(id) {
       await remove(ref(db, 'members/' + id));
     },
 
-    // Real-time listener สำหรับ members
     onMembers(callback) {
       return onValue(ref(db, 'members'), snap => {
         if (!snap.exists()) { callback([]); return; }
@@ -68,13 +62,13 @@ try {
       });
     },
 
-    // อ่าน/เขียน user avatar
+    // avatar เก็บเป็น base64 string ใน Realtime DB โดยตรง
     async getUserAvatar(username) {
       const snap = await get(ref(db, 'users/' + safeKey(username) + '/avatar'));
       return snap.exists() ? snap.val() : null;
     },
-    async setUserAvatar(username, url) {
-      await set(ref(db, 'users/' + safeKey(username) + '/avatar'), url);
+    async setUserAvatar(username, base64) {
+      await set(ref(db, 'users/' + safeKey(username) + '/avatar'), base64);
     },
     onUserAvatar(username, callback) {
       return onValue(ref(db, 'users/' + safeKey(username) + '/avatar'), snap => {
@@ -82,11 +76,9 @@ try {
       });
     },
 
-    // อัปโหลดรูปไป Storage
-    async uploadAvatar(path, file) {
-      const storageRef = sRef(storage, path);
-      await uploadBytes(storageRef, file);
-      return await getDownloadURL(storageRef);
+    // member avatar เก็บเป็น base64 ใน members node
+    async setMemberAvatar(memberId, base64) {
+      await set(ref(db, 'members/' + memberId + '/avatar'), base64);
     }
   };
 
@@ -722,9 +714,9 @@ function startUserAvatarListener() {
   });
 }
 
-async function saveUserAvatar(url) {
+async function saveUserAvatar(base64) {
   if (!isFbReady() || !currentUser) return;
-  await window._fb.setUserAvatar(currentUser.username, url);
+  await window._fb.setUserAvatar(currentUser.username, base64);
 }
 
 async function handleProfileAvatarUpload(event) {
@@ -732,38 +724,36 @@ async function handleProfileAvatarUpload(event) {
   if (!file) return;
   event.target.value = '';
 
-  const compressed = await compressImage(file, 800, 0.78);
-
   const progWrap = document.getElementById('profileUploadProgress');
   const progBar  = document.getElementById('profileUploadBar');
   const progLbl  = document.getElementById('profileUploadLabel');
-  if (progWrap) { progWrap.style.display='block'; progBar.style.width='0%'; progLbl.textContent='กำลังบีบอัดรูป...'; }
+  if (progWrap) { progWrap.style.display='block'; progBar.style.width='10%'; progLbl.textContent='กำลังบีบอัดรูป...'; }
 
-  if (isFbReady()) {
-    try {
-      if(progLbl) progLbl.textContent='กำลังอัปโหลดไปยัง Cloud...';
-      if(progBar) progBar.style.width='30%';
-      const blob = await fetch(compressed).then(r => r.blob());
-      if(progBar) progBar.style.width='60%';
-      const url = await window._fb.uploadAvatar(`user_avatars/${currentUser.username}_${Date.now()}.jpg`, blob);
-      if(progBar) progBar.style.width='90%';
-      await saveUserAvatar(url);
+  try {
+    // บีบอัดให้เล็ก 300px / quality 0.7 → ~20-40KB
+    const base64 = await compressImage(file, 300, 0.7);
+    if(progBar) progBar.style.width='60%';
+    if(progLbl) progLbl.textContent='กำลังบันทึก...';
+
+    // เซฟลง Realtime DB โดยตรง (ไม่ต้องใช้ Storage)
+    if (isFbReady()) {
+      await window._fb.setUserAvatar(currentUser.username, base64);
       if(progBar) progBar.style.width='100%';
       if(progLbl) progLbl.textContent='✅ sync เรียบร้อย';
-      setTimeout(() => { if(progWrap) progWrap.style.display='none'; }, 1800);
+      setTimeout(() => { if(progWrap) progWrap.style.display='none'; }, 1500);
       showToast('✅ เปลี่ยนรูปโปรไฟล์เรียบร้อย — sync ทุกอุปกรณ์แล้ว');
-    } catch(e) {
-      console.error(e);
+    } else {
+      currentUserAvatar = base64;
+      localStorage.setItem('tds_user_avatar_' + currentUser.username, base64);
+      renderTopAvatar();
       if(progWrap) progWrap.style.display='none';
-      showToast('❌ อัปโหลดล้มเหลว: ' + e.message, true);
+      if(currentTab === 'profile') renderProfile();
+      showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
     }
-  } else {
-    currentUserAvatar = compressed;
-    localStorage.setItem('tds_user_avatar_' + currentUser.username, compressed);
-    renderTopAvatar();
+  } catch(e) {
+    console.error(e);
     if(progWrap) progWrap.style.display='none';
-    if(currentTab === 'profile') renderProfile();
-    showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
+    showToast('❌ เกิดข้อผิดพลาด: ' + e.message, true);
   }
 }
 
@@ -1081,52 +1071,45 @@ function triggerAvatarUpload() {
 
 async function handleAvatarUpload(event) {
   const file = event.target.files[0];
-  if(!file||!currentDetailId) return;
-  event.target.value=''; // reset
+  if(!file || !currentDetailId) return;
+  event.target.value = '';
 
-  const m = members.find(x=>x.id===currentDetailId);
+  const m = members.find(x => x.id === currentDetailId);
   if(!m) return;
 
-  // compress image to max 800px & ~150KB
-  const compressed = await compressImage(file, 800, 0.75);
-
   const progress = document.getElementById('uploadProgress');
-  const bar = document.getElementById('uploadBar');
-  const label = document.getElementById('uploadLabel');
-  progress.style.display='block';
-  bar.style.width='0%';
-  label.textContent='กำลังบีบอัดรูป...';
+  const bar      = document.getElementById('uploadBar');
+  const label    = document.getElementById('uploadLabel');
+  progress.style.display = 'block';
+  bar.style.width = '10%';
+  label.textContent = 'กำลังบีบอัดรูป...';
 
-  if(isFbReady()) {
-    try {
-      label.textContent='กำลังอัปโหลดไปยัง Cloud...';
-      bar.style.width='30%';
-      const blob = await fetch(compressed).then(r => r.blob());
-      bar.style.width='60%';
-      const url = await window._fb.uploadAvatar(`avatars/${currentDetailId}_${Date.now()}.jpg`, blob);
-      bar.style.width='90%';
-      // บันทึก URL ลง Realtime DB — listener จะอัปเดตทุกอุปกรณ์
-      await writeToFirestore(currentDetailId, { avatar: url });
-      bar.style.width='100%';
-      label.textContent='✅ อัปโหลดสำเร็จ — กำลัง sync...';
-      setTimeout(()=>{ progress.style.display='none'; }, 2000);
+  try {
+    // บีบอัดให้เล็ก 300px / quality 0.7 → ~20-40KB
+    const base64 = await compressImage(file, 300, 0.7);
+    bar.style.width = '60%';
+    label.textContent = 'กำลังบันทึก...';
+
+    if (isFbReady()) {
+      await window._fb.setMemberAvatar(currentDetailId, base64);
+      bar.style.width = '100%';
+      label.textContent = '✅ sync เรียบร้อย';
+      setTimeout(() => { progress.style.display = 'none'; }, 1500);
       showToast('✅ เปลี่ยนรูปโปรไฟล์เรียบร้อย — sync ทุกอุปกรณ์แล้ว');
-    } catch(e) {
-      console.error(e);
-      progress.style.display='none';
-      showToast('❌ อัปโหลดล้มเหลว: '+e.message);
+    } else {
+      // Local fallback
+      members = members.map(x => x.id === currentDetailId ? {...x, avatar: base64} : x);
+      saveLocal();
+      bar.style.width = '100%';
+      updateDetailAvatar(members.find(x => x.id === currentDetailId));
+      if(currentTab === 'members') renderMemberList();
+      setTimeout(() => { progress.style.display = 'none'; }, 1200);
+      showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
     }
-  } else {
-    // Local fallback — store base64
-    label.textContent='บันทึกในเครื่อง...';
-    bar.style.width='80%';
-    members = members.map(x=>x.id===currentDetailId ? {...x,avatar:compressed} : x);
-    saveLocal();
-    bar.style.width='100%';
-    updateDetailAvatar(members.find(x=>x.id===currentDetailId));
-    if(currentTab==='members') renderMembers();
-    setTimeout(()=>{ progress.style.display='none'; }, 1200);
-    showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
+  } catch(e) {
+    console.error(e);
+    progress.style.display = 'none';
+    showToast('❌ เกิดข้อผิดพลาด: ' + e.message, true);
   }
 }
 

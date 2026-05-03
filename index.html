@@ -5,215 +5,468 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0a0a1e">
+<meta name="theme-color" content="#ffffff">
 <title>Team Directory System</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
 <!-- ════════════════════════════════════════════════════════════════════
-  🔥 FIREBASE SETUP
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ขั้นตอนการติดตั้ง Firebase (ฟรี ทำครั้งเดียว ~10 นาที):
-
-  1. ไปที่ https://console.firebase.google.com
-  2. คลิก "Add project" → ตั้งชื่อ เช่น "team-directory"
-  3. ปิด Google Analytics → "Create project"
-  4. ใน project ให้คลิก </> (Web app) → ตั้งชื่อ → "Register app"
-  5. คัดลอก firebaseConfig ที่ได้ มาแทนที่ด้านล่าง
-  6. ไปที่ Build → Firestore Database → "Create database"
-     → เลือก "Start in test mode" → เลือก location ใกล้สุด (asia-southeast1)
-  7. ไปที่ Build → Storage → "Get started" → "Start in test mode"
-  8. เสร็จ! ทุกอุปกรณ์จะ sync รูปกันแบบ real-time
-
-  ⚠️ แทนที่ค่าด้านล่างด้วย config ของคุณ:
-════════════════════════════════════════════════════════════════════ -->
+  🔥 FIREBASE — Realtime Database + Storage
+  ✅ Config ตั้งค่าเรียบร้อยแล้ว พร้อม Sync ทุกอุปกรณ์
+  ════════════════════════════════════════════════════════════════════ -->
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { initializeApp }                                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, remove, child }  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-// ══════════ 🔧 แก้ไขค่าเหล่านี้ด้วย Firebase config ของคุณ ══════════
+// ✅ Firebase Config — team-directory-soa
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey:            "AIzaSyBt0jaIW9xXNpGOAmTX_RigB2J45RONEPs",
+  authDomain:        "team-directory-soa.firebaseapp.com",
+  databaseURL:       "https://team-directory-soa-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "team-directory-soa",
+  storageBucket:     "team-directory-soa.firebasestorage.app",
+  messagingSenderId: "180704913393",
+  appId:             "1:180704913393:web:1440253ed548e4bbcfc650",
+  measurementId:     "G-0R0LJ7MY9Y"
 };
-// ═══════════════════════════════════════════════════════════════════
 
-const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+try {
+  const app     = initializeApp(firebaseConfig);
+  const db      = getDatabase(app);
+  const storage = getStorage(app);
 
-let db, storage;
+  // ── helper: แปลง path-safe key (แทน . ด้วย _dot_)
+  const safeKey = k => k.replace(/\./g, '_dot_');
 
-if (FIREBASE_CONFIGURED) {
-  try {
-    const app = initializeApp(firebaseConfig);
-    db      = getFirestore(app);
-    storage = getStorage(app);
-    window._fb = { db, storage, doc, setDoc, getDoc, onSnapshot, collection, getDocs, ref, uploadBytes, getDownloadURL };
-    window._fbReady = true;
-    console.log("✅ Firebase connected");
-  } catch(e) {
-    console.error("Firebase init error:", e);
-    window._fbReady = false;
-  }
-} else {
+  window._fb = {
+    db, storage,
+
+    // อ่าน members ทั้งหมดครั้งเดียว
+    async getMembers() {
+      const snap = await get(ref(db, 'members'));
+      if (!snap.exists()) return [];
+      return Object.values(snap.val());
+    },
+
+    // เขียน / อัปเดต member
+    async setMember(id, data) {
+      await set(ref(db, 'members/' + id), data);
+    },
+
+    // ลบ member
+    async deleteMember(id) {
+      await remove(ref(db, 'members/' + id));
+    },
+
+    // Real-time listener สำหรับ members
+    onMembers(callback) {
+      return onValue(ref(db, 'members'), snap => {
+        if (!snap.exists()) { callback([]); return; }
+        const arr = Object.values(snap.val());
+        arr.sort((a,b) => String(a.id).localeCompare(String(b.id)));
+        callback(arr);
+      });
+    },
+
+    // อ่าน/เขียน user avatar
+    async getUserAvatar(username) {
+      const snap = await get(ref(db, 'users/' + safeKey(username) + '/avatar'));
+      return snap.exists() ? snap.val() : null;
+    },
+    async setUserAvatar(username, url) {
+      await set(ref(db, 'users/' + safeKey(username) + '/avatar'), url);
+    },
+    onUserAvatar(username, callback) {
+      return onValue(ref(db, 'users/' + safeKey(username) + '/avatar'), snap => {
+        callback(snap.exists() ? snap.val() : null);
+      });
+    },
+
+    // อัปโหลดรูปไป Storage
+    async uploadAvatar(path, file) {
+      const storageRef = sRef(storage, path);
+      await uploadBytes(storageRef, file);
+      return await getDownloadURL(storageRef);
+    }
+  };
+
+  window._fbReady = true;
+  console.log("✅ Firebase Realtime Database เชื่อมต่อสำเร็จ");
+} catch(e) {
+  console.error("Firebase init error:", e);
   window._fbReady = false;
-  console.warn("⚠️ Firebase not configured — running in local mode");
 }
 </script>
 
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&display=swap');
+
 :root {
-  --bg:#0a0a1e; --bg2:#10102a; --bg3:#16163a;
-  --card:rgba(255,255,255,0.05); --card-border:rgba(255,255,255,0.09);
-  --accent:#4f8aff; --accent2:#7b5fff; --orange:#ff7b35; --green:#2edfa3;
-  --text:#f0f0ff; --text2:rgba(240,240,255,0.55); --text3:rgba(240,240,255,0.3);
-  --r1:#ff4d6d; --r2:#4f8aff; --r3:#2edfa3; --r4:#ffb347;
-  --font:'Noto Sans Thai','Inter',sans-serif;
+  /* Light Theme */
+  --bg: #f4f6fb;
+  --bg2: #ffffff;
+  --bg3: #eef1f8;
+  --card: #ffffff;
+  --card-border: #e2e8f4;
+  --card-shadow: 0 2px 12px rgba(80,100,160,0.08), 0 1px 3px rgba(80,100,160,0.06);
+
+  /* Accent Colors */
+  --accent: #3b7aff;
+  --accent2: #6c5ce7;
+  --accent-soft: rgba(59,122,255,0.1);
+  --orange: #f97316;
+  --green: #10b981;
+
+  /* Text */
+  --text: #1a2340;
+  --text2: #6274a0;
+  --text3: #a0aec0;
+
+  /* Regional Badges */
+  --r1: #ef4444;
+  --r2: #3b7aff;
+  --r3: #10b981;
+  --r4: #f59e0b;
+
+  --font: 'Noto Sans Thai', 'Sarabun', sans-serif;
+  --radius: 16px;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden}
-.screen{display:none;min-height:100vh}
-.screen.active{display:flex;flex-direction:column}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow-x: hidden; }
+.screen { display: none; min-height: 100vh; }
+.screen.active { display: flex; flex-direction: column; }
 
 /* ── LOGIN ── */
-#loginScreen{
-  background:radial-gradient(ellipse at 30% 20%,rgba(79,138,255,0.18) 0%,transparent 60%),
-             radial-gradient(ellipse at 80% 80%,rgba(123,95,255,0.15) 0%,transparent 60%),var(--bg);
-  align-items:center;justify-content:center;padding:24px;
+#loginScreen {
+  background: linear-gradient(145deg, #eef2ff 0%, #f4f6fb 40%, #fdf4ff 100%);
+  align-items: center; justify-content: center; padding: 24px; position: relative; overflow: hidden;
 }
-.login-card{width:100%;max-width:400px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:40px 32px;backdrop-filter:blur(20px);box-shadow:0 24px 80px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08)}
-.login-logo{width:72px;height:72px;border-radius:20px;margin:0 auto 20px;background:linear-gradient(135deg,#4f8aff,#7b5fff);display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 8px 32px rgba(79,138,255,0.4)}
-.login-title{font-size:22px;font-weight:800;text-align:center;margin-bottom:4px}
-.login-sub{font-size:13px;color:var(--text2);text-align:center;margin-bottom:32px}
-.form-group{margin-bottom:16px}
-.form-group label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase}
-.form-group input{width:100%;padding:12px 16px;border-radius:12px;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.07);color:var(--text);font-size:15px;font-family:var(--font);outline:none;transition:border-color .2s}
-.form-group input:focus{border-color:var(--accent)}
-.btn-login{width:100%;padding:14px;border-radius:14px;border:none;background:linear-gradient(135deg,#4f8aff,#7b5fff);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:var(--font);margin-top:8px;box-shadow:0 4px 20px rgba(79,138,255,0.4);transition:opacity .2s,transform .1s}
-.btn-login:active{transform:scale(0.98);opacity:0.9}
-.login-error{background:rgba(255,77,109,0.15);border:1px solid rgba(255,77,109,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:#ff4d6d;margin-top:12px;display:none}
-.firebase-notice{background:rgba(255,179,71,0.1);border:1px solid rgba(255,179,71,0.25);border-radius:10px;padding:10px 14px;font-size:12px;color:#ffb347;margin-top:12px;display:none;line-height:1.5}
+#loginScreen::before {
+  content: ''; position: absolute; width: 500px; height: 500px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(59,122,255,0.12) 0%, transparent 70%);
+  top: -150px; right: -100px; pointer-events: none;
+}
+#loginScreen::after {
+  content: ''; position: absolute; width: 400px; height: 400px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(108,92,231,0.1) 0%, transparent 70%);
+  bottom: -100px; left: -80px; pointer-events: none;
+}
+.login-card {
+  width: 100%; max-width: 400px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.9);
+  border-radius: 28px;
+  padding: 44px 36px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 60px rgba(59,80,160,0.12), 0 4px 16px rgba(59,80,160,0.08), inset 0 1px 0 rgba(255,255,255,1);
+  position: relative; z-index: 1;
+}
+.login-logo {
+  width: 76px; height: 76px; border-radius: 22px; margin: 0 auto 20px;
+  background: linear-gradient(135deg, #3b7aff, #6c5ce7);
+  display: flex; align-items: center; justify-content: center; font-size: 34px;
+  box-shadow: 0 8px 28px rgba(59,122,255,0.35), 0 2px 8px rgba(59,122,255,0.2);
+}
+.login-title { font-size: 23px; font-weight: 800; text-align: center; margin-bottom: 4px; color: var(--text); letter-spacing: -0.3px; }
+.login-sub { font-size: 13px; color: var(--text2); text-align: center; margin-bottom: 32px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.8px; text-transform: uppercase; }
+.form-group input {
+  width: 100%; padding: 13px 16px; border-radius: 13px;
+  border: 1.5px solid var(--card-border);
+  background: var(--bg); color: var(--text); font-size: 15px; font-family: var(--font);
+  outline: none; transition: border-color .2s, box-shadow .2s;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.04);
+}
+.form-group input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,122,255,0.12); }
+.btn-login {
+  width: 100%; padding: 14px; border-radius: 14px; border: none;
+  background: linear-gradient(135deg, #3b7aff, #6c5ce7);
+  color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; font-family: var(--font); margin-top: 8px;
+  box-shadow: 0 4px 20px rgba(59,122,255,0.35), 0 1px 4px rgba(59,122,255,0.2);
+  transition: opacity .2s, transform .1s, box-shadow .2s;
+}
+.btn-login:hover { box-shadow: 0 6px 28px rgba(59,122,255,0.45); }
+.btn-login:active { transform: scale(0.98); opacity: 0.9; }
+.login-error {
+  background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 11px; padding: 10px 14px; font-size: 13px; color: #ef4444; margin-top: 12px; display: none;
+}
+.firebase-notice {
+  background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 11px; padding: 10px 14px; font-size: 12px; color: #d97706; margin-top: 12px; display: none; line-height: 1.6;
+}
+.firebase-notice a { color: #d97706; }
 
 /* ── APP ── */
-#appScreen{background:var(--bg)}
-.topbar{background:rgba(10,10,30,0.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--card-border);padding:14px 20px 12px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-shrink:0}
-.topbar-left{display:flex;flex-direction:column;gap:1px}
-.topbar-title{font-size:17px;font-weight:800;letter-spacing:0.3px}
-.topbar-sub{font-size:11px;color:var(--text2)}
-.topbar-right{display:flex;align-items:center;gap:10px}
-.btn-add{background:linear-gradient(135deg,#4f8aff,#7b5fff);border:none;border-radius:20px;color:#fff;font-weight:700;font-size:12px;padding:6px 14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;gap:4px}
-.avatar-sm{width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;overflow:hidden}
-.avatar-sm img{width:100%;height:100%;object-fit:cover}
+#appScreen { background: var(--bg); }
+.topbar {
+  background: rgba(255,255,255,0.92); backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--card-border);
+  padding: 14px 20px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100; flex-shrink: 0;
+  box-shadow: 0 1px 8px rgba(80,100,160,0.07);
+}
+.topbar-left { display: flex; flex-direction: column; gap: 1px; }
+.topbar-title { font-size: 17px; font-weight: 800; letter-spacing: -0.2px; color: var(--text); }
+.topbar-sub { font-size: 11px; color: var(--text2); }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.btn-add {
+  background: linear-gradient(135deg, #3b7aff, #6c5ce7); border: none;
+  border-radius: 20px; color: #fff; font-weight: 700; font-size: 12px; padding: 7px 15px;
+  cursor: pointer; font-family: var(--font); display: flex; align-items: center; gap: 4px;
+  box-shadow: 0 2px 10px rgba(59,122,255,0.3);
+}
+.avatar-sm { width: 36px; height: 36px; border-radius: 50%; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+.avatar-sm img { width: 100%; height: 100%; object-fit: cover; }
 
 /* ── CONTENT ── */
-.content{flex:1;overflow-y:auto;padding:16px 16px 80px;-webkit-overflow-scrolling:touch}
-.content::-webkit-scrollbar{display:none}
+.content { flex: 1; overflow-y: auto; padding: 16px 16px 80px; -webkit-overflow-scrolling: touch; }
+.content::-webkit-scrollbar { display: none; }
 
-/* ── SEARCH + FILTER ── */
-.search-wrap{background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:14px;padding:10px 14px;display:flex;align-items:center;gap:8px;margin-bottom:12px}
-.search-wrap svg{opacity:.45;flex-shrink:0}
-.search-wrap input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:14px;font-family:var(--font)}
-.search-wrap input::placeholder{color:var(--text3)}
-.filter-pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
-.filter-pills::-webkit-scrollbar{display:none}
-.pill{padding:5px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;border:1.5px solid rgba(255,255,255,0.12);background:transparent;color:var(--text2);transition:all .2s;font-family:var(--font)}
-.pill.active{background:rgba(79,138,255,0.2);border-color:var(--accent);color:var(--accent)}
+/* ── SEARCH ── */
+.search-wrap {
+  background: var(--card); border: 1.5px solid var(--card-border);
+  border-radius: 14px; padding: 11px 15px;
+  display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+  box-shadow: var(--card-shadow);
+  transition: border-color .2s, box-shadow .2s;
+}
+.search-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,122,255,0.1), var(--card-shadow); }
+.search-wrap svg { opacity: .4; flex-shrink: 0; color: var(--text2); }
+.search-wrap input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 14px; font-family: var(--font); }
+.search-wrap input::placeholder { color: var(--text3); }
+
+/* ── FILTER PILLS ── */
+.filter-pills { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; }
+.filter-pills::-webkit-scrollbar { display: none; }
+.pill {
+  padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; border: 1.5px solid var(--card-border);
+  background: var(--card); color: var(--text2); transition: all .2s; font-family: var(--font);
+  box-shadow: 0 1px 4px rgba(80,100,160,0.06);
+}
+.pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); box-shadow: 0 2px 8px rgba(59,122,255,0.15); }
 
 /* ── STATS ── */
-.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
-.stat-card{background:var(--card);border:1px solid var(--card-border);border-radius:12px;padding:10px 6px;text-align:center}
-.stat-icon{font-size:18px}.stat-val{font-size:20px;font-weight:900;color:var(--accent)}.stat-lbl{font-size:9px;color:var(--text3);margin-top:1px;line-height:1.2}
+.stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 16px; }
+.stat-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 14px; padding: 11px 6px; text-align: center;
+  box-shadow: var(--card-shadow);
+  transition: transform .15s, box-shadow .15s;
+}
+.stat-card:active { transform: scale(0.97); }
+.stat-icon { font-size: 18px; margin-bottom: 2px; }
+.stat-val { font-size: 21px; font-weight: 900; color: var(--accent); line-height: 1.1; }
+.stat-lbl { font-size: 9px; color: var(--text3); margin-top: 2px; line-height: 1.2; }
 
 /* ── MEMBER CARD ── */
-.member-card{background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:13px;cursor:pointer;transition:background .18s,transform .12s;margin-bottom:9px}
-.member-card:active{transform:scale(0.98);background:rgba(255,255,255,0.09)}
-.avatar-circle{width:52px;height:52px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;border:2.5px solid rgba(255,255,255,0.2);box-shadow:0 4px 14px rgba(0,0,0,0.35);overflow:hidden;position:relative;background-size:cover;background-position:center}
-.avatar-circle img{width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0;border-radius:50%}
-.member-info{flex:1;min-width:0}
-.member-name{font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.member-en{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-.member-pos{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
-.member-meta{display:flex;align-items:flex-end;flex-direction:column;gap:5px;flex-shrink:0}
-.regional-badge{font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:0.5px}
-.r1{background:rgba(255,77,109,0.18);color:var(--r1)}.r2{background:rgba(79,138,255,0.18);color:var(--r2)}.r3{background:rgba(46,223,163,0.18);color:var(--r3)}.r4{background:rgba(255,179,71,0.18);color:var(--r4)}
-.rsoa-tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(255,123,53,0.2);color:var(--orange)}
+.member-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 14px 16px;
+  display: flex; align-items: center; gap: 13px;
+  cursor: pointer; transition: all .18s; margin-bottom: 9px;
+  box-shadow: var(--card-shadow);
+}
+.member-card:hover { box-shadow: 0 4px 20px rgba(59,122,255,0.12); border-color: rgba(59,122,255,0.2); transform: translateY(-1px); }
+.member-card:active { transform: scale(0.98); box-shadow: var(--card-shadow); }
+.avatar-circle {
+  width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: #fff;
+  border: 2.5px solid rgba(255,255,255,0.6);
+  box-shadow: 0 3px 12px rgba(0,0,0,0.18);
+  overflow: hidden; position: relative;
+}
+.avatar-circle img { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; border-radius: 50%; }
+.member-info { flex: 1; min-width: 0; }
+.member-name { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member-en { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.member-pos { font-size: 11px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+.member-meta { display: flex; align-items: flex-end; flex-direction: column; gap: 5px; flex-shrink: 0; }
+.regional-badge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: 0.5px; }
+.r1 { background: rgba(239,68,68,0.1); color: var(--r1); }
+.r2 { background: rgba(59,122,255,0.1); color: var(--r2); }
+.r3 { background: rgba(16,185,129,0.12); color: var(--r3); }
+.r4 { background: rgba(245,158,11,0.12); color: var(--r4); }
+.rsoa-tag { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 10px; background: rgba(249,115,22,0.1); color: var(--orange); }
 
 /* ── BOTTOM NAV ── */
-.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:600px;background:rgba(8,8,24,0.96);backdrop-filter:blur(20px);border-top:1px solid var(--card-border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0)}
-.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;cursor:pointer;background:none;border:none;color:var(--text3);transition:color .2s;font-family:var(--font)}
-.nav-item.active{color:var(--accent)}
-.nav-item svg{width:22px;height:22px}
-.nav-item span{font-size:10px;font-weight:600}
+.bottom-nav {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 600px;
+  background: rgba(255,255,255,0.95); backdrop-filter: blur(20px);
+  border-top: 1px solid var(--card-border);
+  box-shadow: 0 -4px 20px rgba(80,100,160,0.08);
+  display: flex; z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.nav-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 4px 8px; cursor: pointer; background: none; border: none;
+  color: var(--text3); transition: color .2s; font-family: var(--font);
+}
+.nav-item.active { color: var(--accent); }
+.nav-item svg { width: 22px; height: 22px; }
+.nav-item span { font-size: 10px; font-weight: 700; }
 
 /* ── MODAL ── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.72);backdrop-filter:blur(5px);z-index:200;display:none;align-items:flex-end;justify-content:center}
-.modal-overlay.show{display:flex}
-.modal-sheet{width:100%;max-width:560px;max-height:92vh;overflow-y:auto;background:linear-gradient(180deg,var(--bg3),var(--bg2));border-radius:24px 24px 0 0;border:1px solid var(--card-border);-webkit-overflow-scrolling:touch}
-.modal-sheet::-webkit-scrollbar{display:none}
-.modal-header-band{height:100px;background:linear-gradient(135deg,rgba(79,138,255,0.25),rgba(123,95,255,0.2));border-radius:24px 24px 0 0;position:relative;flex-shrink:0}
-.modal-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.modal-avatar-wrap{display:flex;justify-content:center;margin-top:-44px;margin-bottom:10px}
-.modal-avatar{width:88px;height:88px;border-radius:50%;border:3.5px solid var(--bg2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,0.5);position:relative;cursor:pointer}
-.modal-avatar img{width:100%;height:100%;object-fit:cover;position:absolute}
-.avatar-edit-overlay{position:absolute;bottom:0;left:0;right:0;height:36%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;font-size:14px}
-.modal-name{text-align:center;font-size:20px;font-weight:900;padding:0 24px}
-.modal-en{text-align:center;font-size:13px;color:var(--text2);margin-top:3px}
-.modal-pos{text-align:center;font-size:12px;color:var(--accent);margin-top:6px;font-weight:600;padding:0 20px}
-.modal-badges{display:flex;justify-content:center;gap:8px;margin-top:8px;flex-wrap:wrap}
-.info-list{padding:20px 24px;display:flex;flex-direction:column;gap:2px}
-.info-row{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
-.info-icon{font-size:18px;width:26px;text-align:center;flex-shrink:0;margin-top:2px}
-.info-label{font-size:11px;color:var(--text3);margin-bottom:2px;font-weight:600;letter-spacing:0.3px}
-.info-val{font-size:14px;font-weight:600;color:var(--text)}
-.info-val a{color:var(--accent);text-decoration:none}
-.modal-actions{padding:16px 24px 32px;display:flex;gap:10px}
-.btn-call{flex:1;padding:13px;border-radius:13px;border:none;background:linear-gradient(135deg,#2edfa3,#1bbf87);color:#fff;font-weight:700;font-size:14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:6px}
-.btn-mail{flex:1;padding:13px;border-radius:13px;border:1.5px solid rgba(255,255,255,0.15);background:transparent;color:var(--text);font-weight:700;font-size:14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:6px}
+.modal-overlay { position: fixed; inset: 0; background: rgba(30,40,80,0.45); backdrop-filter: blur(6px); z-index: 200; display: none; align-items: flex-end; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal-sheet {
+  width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  border: 1px solid var(--card-border);
+  border-bottom: none;
+  box-shadow: 0 -8px 40px rgba(59,80,160,0.15);
+  -webkit-overflow-scrolling: touch;
+}
+.modal-sheet::-webkit-scrollbar { display: none; }
+.modal-header-band {
+  height: 100px;
+  background: linear-gradient(135deg, #eef3ff, #f3eeff);
+  border-radius: 24px 24px 0 0; position: relative; flex-shrink: 0;
+  border-bottom: 1px solid var(--card-border);
+}
+.modal-close {
+  position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;
+  border-radius: 50%; background: rgba(255,255,255,0.9); border: 1px solid var(--card-border);
+  color: var(--text2); font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.modal-avatar-wrap { display: flex; justify-content: center; margin-top: -44px; margin-bottom: 10px; }
+.modal-avatar {
+  width: 88px; height: 88px; border-radius: 50%;
+  border: 3.5px solid #fff;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 800; color: #fff;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.15); position: relative; cursor: pointer;
+}
+.modal-avatar img { width: 100%; height: 100%; object-fit: cover; position: absolute; }
+.avatar-edit-overlay { position: absolute; bottom: 0; left: 0; right: 0; height: 36%; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.modal-name { text-align: center; font-size: 20px; font-weight: 900; padding: 0 24px; color: var(--text); }
+.modal-en { text-align: center; font-size: 13px; color: var(--text2); margin-top: 3px; }
+.modal-pos { text-align: center; font-size: 12px; color: var(--accent); margin-top: 6px; font-weight: 600; padding: 0 20px; }
+.modal-badges { display: flex; justify-content: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.info-list { padding: 20px 24px; display: flex; flex-direction: column; gap: 2px; }
+.info-row { display: flex; gap: 12px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid #f1f5fb; }
+.info-icon { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; margin-top: 2px; }
+.info-label { font-size: 11px; color: var(--text3); margin-bottom: 2px; font-weight: 600; letter-spacing: 0.3px; }
+.info-val { font-size: 14px; font-weight: 600; color: var(--text); }
+.info-val a { color: var(--accent); text-decoration: none; }
+.modal-actions { padding: 16px 24px 32px; display: flex; gap: 10px; }
+.btn-call {
+  flex: 1; padding: 13px; border-radius: 13px; border: none;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; font-family: var(--font);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  box-shadow: 0 3px 12px rgba(16,185,129,0.3);
+}
+.btn-mail {
+  flex: 1; padding: 13px; border-radius: 13px;
+  border: 1.5px solid var(--card-border);
+  background: var(--bg); color: var(--text2);
+  font-weight: 700; font-size: 14px; cursor: pointer; font-family: var(--font);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background .18s;
+}
+.btn-mail:active { background: var(--bg3); }
 
 /* ── PHOTO UPLOAD PROGRESS ── */
-.upload-progress{background:rgba(79,138,255,0.15);border:1px solid rgba(79,138,255,0.3);border-radius:12px;padding:12px 16px;margin:0 24px 12px;display:none}
-.upload-bar-wrap{height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:8px;overflow:hidden}
-.upload-bar{height:100%;background:linear-gradient(90deg,#4f8aff,#7b5fff);border-radius:2px;width:0%;transition:width .3s}
-.upload-label{font-size:12px;color:var(--accent);font-weight:600}
+.upload-progress {
+  background: rgba(59,122,255,0.06); border: 1px solid rgba(59,122,255,0.2);
+  border-radius: 12px; padding: 12px 16px; margin: 0 24px 12px; display: none;
+}
+.upload-bar-wrap { height: 4px; background: #e9edf7; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.upload-bar { height: 100%; background: linear-gradient(90deg, #3b7aff, #6c5ce7); border-radius: 2px; width: 0%; transition: width .3s; }
+.upload-label { font-size: 12px; color: var(--accent); font-weight: 600; }
 
 /* ── SYNC INDICATOR ── */
-.sync-dot{width:8px;height:8px;border-radius:50%;background:#2edfa3;display:inline-block;margin-right:5px;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
-.sync-off{background:#ff4d6d;animation:none}
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.5; transform:scale(0.85); } }
+.sync-off { background: #ef4444; animation: none; }
 
 /* ── FORM ── */
-.form-sheet{padding:24px 24px 32px}
-.form-title{font-size:18px;font-weight:800;margin-bottom:20px;display:flex;align-items:center;gap:8px}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
-.field{margin-bottom:13px}
-.field label{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;letter-spacing:0.3px}
-.field input,.field select{width:100%;padding:10px 13px;border-radius:11px;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.06);color:var(--text);font-size:14px;font-family:var(--font);outline:none;transition:border-color .2s}
-.field input:focus,.field select:focus{border-color:var(--accent)}
-.field select option{background:#1a1a3e}
-.field.full{grid-column:1/-1}
-.form-btns{display:flex;gap:10px;margin-top:6px}
-.btn-save{flex:2;padding:13px;border-radius:13px;border:none;background:linear-gradient(135deg,#4f8aff,#7b5fff);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:var(--font)}
-.btn-cancel{flex:1;padding:13px;border-radius:13px;border:1.5px solid rgba(255,255,255,0.15);background:transparent;color:var(--text2);font-size:14px;cursor:pointer;font-family:var(--font)}
-.btn-delete{padding:13px 18px;border-radius:13px;border:1.5px solid rgba(255,77,109,0.3);background:rgba(255,77,109,0.1);color:var(--r1);font-size:14px;cursor:pointer;font-family:var(--font)}
+.form-sheet { padding: 24px 24px 32px; }
+.form-title { font-size: 18px; font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; color: var(--text); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.field { margin-bottom: 13px; }
+.field label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); margin-bottom: 5px; letter-spacing: 0.4px; }
+.field input, .field select {
+  width: 100%; padding: 10px 13px; border-radius: 11px;
+  border: 1.5px solid var(--card-border);
+  background: var(--bg); color: var(--text); font-size: 14px; font-family: var(--font);
+  outline: none; transition: border-color .2s, box-shadow .2s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,122,255,0.1); }
+.field select option { background: #fff; color: var(--text); }
+.field.full { grid-column: 1/-1; }
+.form-btns { display: flex; gap: 10px; margin-top: 6px; }
+.btn-save {
+  flex: 2; padding: 13px; border-radius: 13px; border: none;
+  background: linear-gradient(135deg, #3b7aff, #6c5ce7); color: #fff;
+  font-weight: 700; font-size: 15px; cursor: pointer; font-family: var(--font);
+  box-shadow: 0 3px 14px rgba(59,122,255,0.3);
+}
+.btn-cancel {
+  flex: 1; padding: 13px; border-radius: 13px;
+  border: 1.5px solid var(--card-border); background: var(--bg);
+  color: var(--text2); font-size: 14px; cursor: pointer; font-family: var(--font);
+}
+.btn-delete {
+  padding: 13px 18px; border-radius: 13px;
+  border: 1.5px solid rgba(239,68,68,0.25); background: rgba(239,68,68,0.06);
+  color: #ef4444; font-size: 14px; cursor: pointer; font-family: var(--font);
+}
 
 /* ── PROFILE ── */
-.profile-wrap{padding:16px}
-.profile-hero{background:linear-gradient(135deg,rgba(79,138,255,0.2),rgba(123,95,255,0.2));border:1px solid var(--card-border);border-radius:20px;padding:28px 20px;text-align:center;margin-bottom:16px}
-.profile-avatar-wrap{position:relative;width:96px;height:96px;margin:0 auto 14px;cursor:pointer}
-.profile-avatar{width:96px;height:96px;border-radius:50%;border:3px solid rgba(255,255,255,0.2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,0.5);position:relative}
-.profile-avatar img{width:100%;height:100%;object-fit:cover;position:absolute;top:0;left:0}
-.profile-avatar-edit{position:absolute;bottom:0;right:0;width:28px;height:28px;border-radius:50%;background:var(--accent);border:2.5px solid var(--bg2);display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
-.avatar-sm img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.profile-wrap { padding: 16px; }
+.profile-hero {
+  background: linear-gradient(135deg, #eef3ff 0%, #f3eeff 100%);
+  border: 1px solid var(--card-border);
+  border-radius: 20px; padding: 28px 20px; text-align: center; margin-bottom: 16px;
+  box-shadow: var(--card-shadow);
+}
+.profile-avatar-wrap { position: relative; width: 96px; height: 96px; margin: 0 auto 14px; cursor: pointer; }
+.profile-avatar {
+  width: 96px; height: 96px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.9);
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+  font-size: 30px; font-weight: 800; color: #fff;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.15); position: relative;
+}
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
+.profile-avatar-edit {
+  position: absolute; bottom: 0; right: 0; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); border: 2.5px solid #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59,122,255,0.35);
+}
+.avatar-sm img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
 /* ── EMPTY / TOAST / SPINNER ── */
-.empty{text-align:center;padding:48px 20px;color:var(--text3);font-size:14px}
-.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%) translateY(-80px);background:rgba(46,223,163,0.9);color:#fff;font-weight:700;padding:10px 22px;border-radius:24px;font-size:14px;font-family:var(--font);z-index:999;transition:transform .3s;pointer-events:none;backdrop-filter:blur(10px)}
-.toast.show{transform:translateX(-50%) translateY(0)}
-.spinner{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+.empty { text-align: center; padding: 48px 20px; color: var(--text3); font-size: 14px; }
+.toast {
+  position: fixed; top: 80px; left: 50%; transform: translateX(-50%) translateY(-80px);
+  background: var(--green); color: #fff; font-weight: 700; padding: 11px 24px;
+  border-radius: 24px; font-size: 14px; font-family: var(--font); z-index: 999;
+  transition: transform .3s; pointer-events: none;
+  box-shadow: 0 4px 20px rgba(16,185,129,0.35);
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(59,122,255,0.25); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── SECTION LABEL ── */
+.section-label {
+  font-size: 11px; font-weight: 700; color: var(--text3); letter-spacing: 1px;
+  text-transform: uppercase; padding: 6px 4px 8px; margin-top: 4px;
+}
 </style>
 </head>
 <body>
@@ -339,13 +592,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+
 <script>
 // ═══════════════════════════════════════════════
 // ACCOUNTS
 // ═══════════════════════════════════════════════
 const ACCOUNTS = [
   { username:'soa',   password:'makroho',      role:'user'  },
-  { username:'admin', password:'admin1234567', role:'admin' },
+  { username:'admin', password:'adminho', role:'admin' },
 ];
 
 // ═══════════════════════════════════════════════
@@ -384,6 +638,8 @@ let members = JSON.parse(localStorage.getItem('tds_members') || 'null') || INITI
 let currentTab = 'members';
 let filterRegional = 'all';
 let searchQ = '';
+let searchInputVal = ''; // raw input value (may not yet be committed to searchQ)
+let searchDebounceTimer = null;
 let editingId = null;
 let currentDetailId = null;
 let fbListeners = [];
@@ -412,70 +668,63 @@ function getAge(birth) {
 }
 
 // ═══════════════════════════════════════════════
-// FIREBASE SYNC
+// FIREBASE SYNC — Realtime Database
 // ═══════════════════════════════════════════════
 function isFbReady() { return window._fbReady === true; }
 
-// Push all initial members to Firestore if not yet seeded
+// Seed ข้อมูลเริ่มต้นถ้า Database ว่างเปล่า
 async function seedFirestore() {
   if (!isFbReady()) return;
-  const {db, collection, getDocs, doc, setDoc} = window._fb;
-  const snap = await getDocs(collection(db,'members'));
-  if (!snap.empty) return; // already seeded
+  const existing = await window._fb.getMembers();
+  if (existing.length > 0) return; // มีข้อมูลแล้ว ไม่ต้อง seed
   for (const m of INITIAL_MEMBERS) {
-    await setDoc(doc(db,'members',m.id), m);
+    await window._fb.setMember(m.id, m);
   }
-  console.log('✅ Seeded Firestore with', INITIAL_MEMBERS.length, 'members');
+  console.log('✅ Seeded Realtime DB with', INITIAL_MEMBERS.length, 'members');
 }
 
-// Real-time listener — updates local array and re-renders
+// Real-time listener — อัปเดตทุกอุปกรณ์ทันที
 function startFirebaseListener() {
   if (!isFbReady()) return;
-  const {db, collection, onSnapshot} = window._fb;
-  const unsub = onSnapshot(collection(db,'members'), snap => {
-    const updated = [];
-    snap.forEach(d => updated.push(d.data()));
+  const unsub = window._fb.onMembers(updated => {
     if (updated.length > 0) {
-      updated.sort((a,b)=>String(a.id).localeCompare(String(b.id)));
       members = updated;
       saveLocal();
-      if (currentTab==='members') renderMembers();
-      // update detail modal if open
+      if (currentTab === 'members') {
+        if (document.getElementById('memberList')) renderMemberList();
+        else renderMembers();
+      }
       if (currentDetailId) {
-        const m = members.find(x=>x.id===currentDetailId);
+        const m = members.find(x => x.id === currentDetailId);
         if (m) updateDetailAvatar(m);
       }
     }
-  }, err => {
-    console.error('Firestore listener error:', err);
-    setTopSync(false, 'Firebase error');
   });
   fbListeners.push(unsub);
-  setTopSync(true, 'Sync แบบ Real-time');
+  setTopSync(true, 'Sync แบบ Real-time ✅');
 }
 
-function stopFirebaseListeners() { fbListeners.forEach(u=>u()); fbListeners=[]; if(userAvatarListener){userAvatarListener();userAvatarListener=null;} }
+function stopFirebaseListeners() {
+  fbListeners.forEach(u => u());
+  fbListeners = [];
+  if (userAvatarListener) { userAvatarListener(); userAvatarListener = null; }
+}
 
 // ═══════════════════════════════════════════════
-// USER PROFILE PHOTO (users collection)
+// USER PROFILE PHOTO
 // ═══════════════════════════════════════════════
 function startUserAvatarListener() {
   if (!isFbReady() || !currentUser) return;
-  const {db, doc, onSnapshot} = window._fb;
-  const unsub = onSnapshot(doc(db, 'users', currentUser.username), snap => {
-    const data = snap.exists() ? snap.data() : {};
-    currentUserAvatar = data.avatar || null;
+  userAvatarListener = window._fb.onUserAvatar(currentUser.username, url => {
+    currentUserAvatar = url;
     renderTopAvatar();
-    // re-render profile tab if open
     if (currentTab === 'profile') renderProfile();
-  }, err => console.error('User avatar listener error:', err));
-  userAvatarListener = unsub;
+  });
 }
 
 async function saveUserAvatar(url) {
   if (!isFbReady() || !currentUser) return;
-  const {db, doc, setDoc} = window._fb;
-  await setDoc(doc(db, 'users', currentUser.username), { avatar: url, updatedAt: Date.now() }, { merge: true });
+  await window._fb.setUserAvatar(currentUser.username, url);
 }
 
 async function handleProfileAvatarUpload(event) {
@@ -494,46 +743,42 @@ async function handleProfileAvatarUpload(event) {
     try {
       if(progLbl) progLbl.textContent='กำลังอัปโหลดไปยัง Cloud...';
       if(progBar) progBar.style.width='30%';
-      const {storage, ref, uploadBytes, getDownloadURL} = window._fb;
-      const storageRef = ref(storage, `user_avatars/${currentUser.username}_${Date.now()}.jpg`);
-      const blob = await fetch(compressed).then(r=>r.blob());
+      const blob = await fetch(compressed).then(r => r.blob());
       if(progBar) progBar.style.width='60%';
-      await uploadBytes(storageRef, blob);
-      if(progBar) progBar.style.width='85%';
-      const url = await getDownloadURL(storageRef);
-      if(progBar) progBar.style.width='95%';
+      const url = await window._fb.uploadAvatar(`user_avatars/${currentUser.username}_${Date.now()}.jpg`, blob);
+      if(progBar) progBar.style.width='90%';
       await saveUserAvatar(url);
       if(progBar) progBar.style.width='100%';
       if(progLbl) progLbl.textContent='✅ sync เรียบร้อย';
-      setTimeout(()=>{ if(progWrap) progWrap.style.display='none'; }, 1800);
+      setTimeout(() => { if(progWrap) progWrap.style.display='none'; }, 1800);
       showToast('✅ เปลี่ยนรูปโปรไฟล์เรียบร้อย — sync ทุกอุปกรณ์แล้ว');
     } catch(e) {
       console.error(e);
       if(progWrap) progWrap.style.display='none';
-      showToast('❌ อัปโหลดล้มเหลว: '+e.message, true);
+      showToast('❌ อัปโหลดล้มเหลว: ' + e.message, true);
     }
   } else {
-    // Local fallback
     currentUserAvatar = compressed;
     localStorage.setItem('tds_user_avatar_' + currentUser.username, compressed);
     renderTopAvatar();
     if(progWrap) progWrap.style.display='none';
-    if(currentTab==='profile') renderProfile();
+    if(currentTab === 'profile') renderProfile();
     showToast('✅ เปลี่ยนรูปแล้ว (บันทึกในเครื่องนี้เท่านั้น)');
   }
 }
 
+// เขียน/อัปเดต member ไป Realtime DB
 async function writeToFirestore(memberId, data) {
   if (!isFbReady()) return;
-  const {db, doc, setDoc} = window._fb;
-  await setDoc(doc(db,'members',memberId), data, {merge:true});
+  // merge กับข้อมูลเดิม
+  const existing = members.find(m => m.id === memberId) || {};
+  await window._fb.setMember(memberId, { ...existing, ...data, id: memberId });
 }
 
+// ลบ member จาก Realtime DB
 async function deleteFromFirestore(memberId) {
   if (!isFbReady()) return;
-  const {db, doc} = window._fb;
-  const {deleteDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-  await deleteDoc(doc(db,'members',memberId));
+  await window._fb.deleteMember(memberId);
 }
 
 function setTopSync(ok, label) {
@@ -559,11 +804,11 @@ function doLogin() {
   currentUserAvatar = localStorage.getItem('tds_user_avatar_' + acc.username) || null;
   renderTopAvatar();
   if (isFbReady()) {
-    seedFirestore().then(()=>startFirebaseListener());
+    seedFirestore().then(() => startFirebaseListener());
     startUserAvatarListener();
-    setTopSync(true,'Sync แบบ Real-time');
+    setTopSync(true, 'Sync แบบ Real-time ✅');
   } else {
-    setTopSync(false,'Local mode');
+    setTopSync(false, 'Local mode');
   }
   switchTab('members');
 }
@@ -619,41 +864,126 @@ function switchTab(tab) {
 }
 
 // ═══════════════════════════════════════════════
-// MEMBERS LIST
+// SEARCH — real-time, min 2 chars, no re-render of shell
 // ═══════════════════════════════════════════════
-function renderMembers() {
-  const el = document.getElementById('mainContent');
-  const filtered = members.filter(m=>{
+function handleSearchInput(val) {
+  searchInputVal = val;
+  clearTimeout(searchDebounceTimer);
+
+  // Update hint text without touching the input element
+  const hint = document.getElementById('searchHint');
+  const badge = document.getElementById('searchBadge');
+  const clearBtn = document.getElementById('searchClearBtn');
+  if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
+
+  if (val.length === 0) {
+    searchQ = '';
+    if (hint) { hint.style.display = 'none'; }
+    if (badge) { badge.style.display = 'none'; }
+    renderMemberList();
+    return;
+  }
+  if (val.length === 1) {
+    if (hint) { hint.style.display = 'flex'; }
+    if (badge) { badge.style.display = 'none'; }
+    // Don't filter yet
+    return;
+  }
+  // 2+ chars: debounce 300ms
+  if (hint) { hint.style.display = 'none'; }
+  searchDebounceTimer = setTimeout(() => {
+    searchQ = val;
+    renderMemberList();
+    // update badge
+    const b = document.getElementById('searchBadge');
+    const filtered = getFiltered();
+    if (b) {
+      b.style.display = 'flex';
+      b.innerHTML = `<span>🔍</span> ค้นหา "<strong>${searchQ}</strong>" — พบ ${filtered.length} คน`;
+    }
+    // update stats search count if visible
+    const statSearch = document.getElementById('statSearch');
+    if (statSearch) statSearch.textContent = filtered.length;
+  }, 300);
+}
+
+function clearSearch() {
+  searchInputVal = '';
+  searchQ = '';
+  clearTimeout(searchDebounceTimer);
+  const inp = document.getElementById('searchInput');
+  if (inp) { inp.value = ''; inp.focus(); }
+  const hint = document.getElementById('searchHint');
+  const badge = document.getElementById('searchBadge');
+  const clearBtn = document.getElementById('searchClearBtn');
+  if (hint) hint.style.display = 'none';
+  if (badge) badge.style.display = 'none';
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderMemberList();
+  const statSearch = document.getElementById('statSearch');
+  if (statSearch) statSearch.textContent = members.filter(m=> filterRegional==='all'||m.regional===+filterRegional).length;
+}
+
+function getFiltered() {
+  return members.filter(m=>{
     const matchR = filterRegional==='all' || m.regional===+filterRegional;
     const q = searchQ.toLowerCase();
     const matchQ = !q || [m.thai,m.eng,m.nick,m.phone,m.email,m.plate,m.pos].join(' ').toLowerCase().includes(q);
     return matchR && matchQ;
   });
+}
+
+// ═══════════════════════════════════════════════
+// MEMBERS LIST — renderMembers builds the shell ONCE,
+// renderMemberList only updates the card list (no input re-creation)
+// ═══════════════════════════════════════════════
+function renderMembers() {
+  const el = document.getElementById('mainContent');
   const counts=[1,2,3,4].map(r=>members.filter(m=>m.regional===r).length);
+  const initFiltered = getFiltered();
 
   el.innerHTML=`
     <div class="search-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input type="text" placeholder="ค้นหาชื่อ, เบอร์, อีเมล, โซน, ทะเบียน..." value="${searchQ}"
-        oninput="searchQ=this.value;renderMembers()" autocomplete="off">
+      <input type="text" id="searchInput"
+        placeholder="พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา..."
+        value="${searchInputVal}"
+        oninput="handleSearchInput(this.value)"
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button id="searchClearBtn" onclick="clearSearch()"
+        style="display:${searchInputVal?'block':'none'};background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:0 2px;line-height:1;flex-shrink:0">✕</button>
+    </div>
+    <div id="searchHint" style="display:${searchInputVal.length===1?'flex':'none'};font-size:12px;color:var(--text3);padding:0 4px 8px;align-items:center;gap:5px">
+      <span style="font-size:14px">💡</span> พิมพ์เพิ่มอีก 1 ตัวอักษรเพื่อเริ่มค้นหา...
+    </div>
+    <div id="searchBadge" style="display:${searchQ&&searchInputVal.length>=2?'flex':'none'};font-size:12px;color:var(--accent);padding:0 4px 8px;align-items:center;gap:5px">
+      <span>🔍</span> ค้นหา "<strong>${searchQ}</strong>" — พบ ${initFiltered.length} คน
     </div>
     <div class="filter-pills">
-      <button class="pill ${filterRegional==='all'?'active':''}" onclick="filterRegional='all';renderMembers()">ทั้งหมด (${members.length})</button>
-      <button class="pill ${filterRegional==='1'?'active':''}" onclick="filterRegional='1';renderMembers()">Regional 1 (${counts[0]})</button>
-      <button class="pill ${filterRegional==='2'?'active':''}" onclick="filterRegional='2';renderMembers()">Regional 2 (${counts[1]})</button>
-      <button class="pill ${filterRegional==='3'?'active':''}" onclick="filterRegional='3';renderMembers()">Regional 3 (${counts[2]})</button>
-      <button class="pill ${filterRegional==='4'?'active':''}" onclick="filterRegional='4';renderMembers()">Regional 4 (${counts[3]})</button>
+      <button class="pill ${filterRegional==='all'?'active':''}" onclick="filterRegional='all';updatePills();renderMemberList()">ทั้งหมด (${members.length})</button>
+      <button class="pill ${filterRegional==='1'?'active':''}" onclick="filterRegional='1';updatePills();renderMemberList()">Regional 1 (${counts[0]})</button>
+      <button class="pill ${filterRegional==='2'?'active':''}" onclick="filterRegional='2';updatePills();renderMemberList()">Regional 2 (${counts[1]})</button>
+      <button class="pill ${filterRegional==='3'?'active':''}" onclick="filterRegional='3';updatePills();renderMemberList()">Regional 3 (${counts[2]})</button>
+      <button class="pill ${filterRegional==='4'?'active':''}" onclick="filterRegional='4';updatePills();renderMemberList()">Regional 4 (${counts[3]})</button>
     </div>
     ${currentUser.role==='admin'?`
     <div class="stats-row">
       <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-val">${members.length}</div><div class="stat-lbl">สมาชิก<br>ทั้งหมด</div></div>
       <div class="stat-card"><div class="stat-icon">🏅</div><div class="stat-val">${members.filter(m=>m.isRSOA).length}</div><div class="stat-lbl">Regional<br>Lead</div></div>
       <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-val">4</div><div class="stat-lbl">Regionals</div></div>
-      <div class="stat-card"><div class="stat-icon">🔍</div><div class="stat-val">${filtered.length}</div><div class="stat-lbl">ผลการ<br>ค้นหา</div></div>
+      <div class="stat-card"><div class="stat-icon">🔍</div><div class="stat-val" id="statSearch">${initFiltered.length}</div><div class="stat-lbl">ผลการ<br>ค้นหา</div></div>
     </div>`:''}
     <div id="memberList"></div>`;
 
+  renderMemberList();
+}
+
+// Update only the card list — input stays untouched
+function renderMemberList() {
   const list = document.getElementById('memberList');
+  if (!list) return;
+  const filtered = getFiltered();
+  list.innerHTML = '';
   if(filtered.length===0){list.innerHTML='<div class="empty">🔍 ไม่พบข้อมูลที่ค้นหา</div>';return;}
   filtered.forEach(m=>{
     const card=document.createElement('div');
@@ -674,6 +1004,13 @@ function renderMembers() {
       </div>`;
     list.appendChild(card);
   });
+}
+
+// Update pill active states without rebuilding DOM
+function updatePills() {
+  const pills = document.querySelectorAll('.filter-pills .pill');
+  const vals = ['all','1','2','3','4'];
+  pills.forEach((p,i)=>p.classList.toggle('active', vals[i]===filterRegional));
 }
 
 // ═══════════════════════════════════════════════
@@ -703,8 +1040,8 @@ function openDetail(id) {
   document.getElementById('detailActions').innerHTML=`
     <button class="btn-call" onclick="window.location='tel:${(m.phone||'').replace(/-/g,'')}'">📞 โทร</button>
     <button class="btn-mail" onclick="window.location='mailto:${m.email}'">✉️ อีเมล</button>
-    ${currentUser.role==='admin'?`<button class="btn-mail" onclick="closeModal('detailModal');openEditForm('${m.id}')" style="background:rgba(79,138,255,0.15);border-color:var(--accent);color:var(--accent)">✏️ แก้ไข</button>`:''}
-  `;
+    ${currentUser.role==='admin'?`<button class="btn-mail" onclick="closeModal('detailModal');openEditForm('${m.id}')" style="background:var(--accent-soft);border-color:var(--accent);color:var(--accent)">✏️ แก้ไข</button>`:''}
+`;
   document.getElementById('detailModal').classList.add('show');
 }
 
@@ -761,19 +1098,14 @@ async function handleAvatarUpload(event) {
   label.textContent='กำลังบีบอัดรูป...';
 
   if(isFbReady()) {
-    // Upload to Firebase Storage
     try {
       label.textContent='กำลังอัปโหลดไปยัง Cloud...';
       bar.style.width='30%';
-      const {storage, ref, uploadBytes, getDownloadURL} = window._fb;
-      const storageRef = ref(storage, `avatars/${currentDetailId}_${Date.now()}.jpg`);
-      const blob = await fetch(compressed).then(r=>r.blob());
+      const blob = await fetch(compressed).then(r => r.blob());
       bar.style.width='60%';
-      await uploadBytes(storageRef, blob);
-      bar.style.width='85%';
-      const url = await getDownloadURL(storageRef);
-      bar.style.width='95%';
-      // Save URL to Firestore — listener will update all devices
+      const url = await window._fb.uploadAvatar(`avatars/${currentDetailId}_${Date.now()}.jpg`, blob);
+      bar.style.width='90%';
+      // บันทึก URL ลง Realtime DB — listener จะอัปเดตทุกอุปกรณ์
       await writeToFirestore(currentDetailId, { avatar: url });
       bar.style.width='100%';
       label.textContent='✅ อัปโหลดสำเร็จ — กำลัง sync...';
@@ -919,23 +1251,23 @@ function renderProfile() {
         </div>
         <input type="file" id="profileFileInput" accept="image/*" style="display:none" onchange="handleProfileAvatarUpload(event)">
 
-        <div id="profileUploadProgress" style="display:none;margin:10px auto 0;max-width:260px;background:rgba(79,138,255,0.15);border:1px solid rgba(79,138,255,0.3);border-radius:12px;padding:10px 14px">
+        <div id="profileUploadProgress" style="display:none;margin:10px auto 0;max-width:260px;background:rgba(59,122,255,0.08);border:1px solid rgba(59,122,255,0.2);border-radius:12px;padding:10px 14px">
           <div id="profileUploadLabel" style="font-size:12px;color:var(--accent);font-weight:600"></div>
-          <div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:8px;overflow:hidden">
-            <div id="profileUploadBar" style="height:100%;background:linear-gradient(90deg,#4f8aff,#7b5fff);border-radius:2px;width:0%;transition:width .3s"></div>
+          <div style="height:4px;background:#e9edf7;border-radius:2px;margin-top:8px;overflow:hidden">
+            <div id="profileUploadBar" style="height:100%;background:linear-gradient(90deg,#3b7aff,#6c5ce7);border-radius:2px;width:0%;transition:width .3s"></div>
           </div>
         </div>
 
-        <div style="font-size:20px;font-weight:900;margin-top:4px">${currentUser.username.toUpperCase()}</div>
+        <div style="font-size:20px;font-weight:900;margin-top:4px;color:var(--text)">${currentUser.username.toUpperCase()}</div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">แตะรูปเพื่อเปลี่ยนโปรไฟล์</div>
         <div style="margin-top:10px">
-          <span style="background:${role==='admin'?'rgba(255,123,53,0.2)':'rgba(79,138,255,0.2)'};color:${role==='admin'?'#ff7b35':'#4f8aff'};padding:3px 14px;border-radius:20px;font-size:12px;font-weight:700">
+          <span style="background:${role==='admin'?'rgba(249,115,22,0.12)':'rgba(59,122,255,0.1)'};color:${role==='admin'?'var(--orange)':'var(--accent)'};padding:4px 16px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid ${role==='admin'?'rgba(249,115,22,0.2)':'rgba(59,122,255,0.2)'}">
             ${role==='admin'?'👑 ADMIN':'👤 USER'}
           </span>
         </div>
       </div>
 
-      <div style="background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px 16px;margin-bottom:12px">
+      <div style="background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px 16px;margin-bottom:12px;box-shadow:var(--card-shadow)">
         <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:8px">🔥 สถานะ Firebase</div>
         <div style="display:flex;align-items:center;gap:8px;font-size:13px">
           <span class="sync-dot ${isFbReady()?'':'sync-off'}"></span>
@@ -944,21 +1276,21 @@ function renderProfile() {
       </div>
 
       ${role==='admin'?`
-      <div style="background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:16px 20px;margin-bottom:12px">
+      <div style="background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:16px 20px;margin-bottom:12px;box-shadow:var(--card-shadow)">
         <div style="font-size:13px;color:var(--text2);font-weight:600;margin-bottom:12px">📊 สรุปข้อมูลระบบ</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div style="text-align:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:12px">
+          <div style="text-align:center;padding:12px;background:var(--bg);border-radius:12px;border:1px solid var(--card-border)">
             <div style="font-size:28px;font-weight:900;color:var(--accent)">${members.length}</div>
             <div style="font-size:11px;color:var(--text3)">สมาชิกทั้งหมด</div>
           </div>
-          <div style="text-align:center;padding:12px;background:rgba(255,255,255,0.04);border-radius:12px">
+          <div style="text-align:center;padding:12px;background:var(--bg);border-radius:12px;border:1px solid var(--card-border)">
             <div style="font-size:28px;font-weight:900;color:var(--orange)">${members.filter(m=>m.isRSOA).length}</div>
             <div style="font-size:11px;color:var(--text3)">Regional Lead</div>
           </div>
         </div>
       </div>`:''}
 
-      <button onclick="doLogout()" style="width:100%;padding:13px;border-radius:14px;border:1.5px solid rgba(255,77,109,0.3);background:rgba(255,77,109,0.08);color:#ff4d6d;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font);margin-top:4px">
+      <button onclick="doLogout()" style="width:100%;padding:13px;border-radius:14px;border:1.5px solid rgba(239,68,68,0.25);background:rgba(239,68,68,0.06);color:#ef4444;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font);margin-top:4px">
         🚪 ออกจากระบบ
       </button>
     </div>`;
@@ -983,7 +1315,7 @@ function closeModal(id) { document.getElementById(id).classList.remove('show'); 
 function showToast(msg,err=false) {
   const t=document.getElementById('toast');
   t.textContent=msg;
-  t.style.background=err?'rgba(255,77,109,0.9)':'rgba(46,223,163,0.9)';
+  t.style.background=err?'rgba(239,68,68,0.92)':'rgba(16,185,129,0.92)';
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2800);
 }
@@ -991,6 +1323,8 @@ function showToast(msg,err=false) {
 document.querySelectorAll('.modal-overlay').forEach(o=>{
   o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('show'); });
 });
+
+
 </script>
 </body>
 </html>
